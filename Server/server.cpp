@@ -9,6 +9,7 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include "../Util.h"
 using namespace std;
 const int PORT = 8080;
 const int BUFFER_SIZE = 4096;
@@ -19,7 +20,7 @@ const int MAX_USERNAME_LENGTH = 5;
 // Function to handle each connected client
 void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
     char buffer[MAX_USERNAME_LENGTH+1] = {0}; // +1 for null terminator  
-    ssize_t bytesRead = recv(clientSocket, buffer, MAX_USERNAME_LENGTH, 0);
+    ssize_t bytesRead = recv(clientSocket, buffer, MAX_USERNAME_LENGTH, MSG_WAITALL);
 
     if (bytesRead <= 0) {
         std::cerr << "Error receiving username from client" << std::endl;
@@ -84,8 +85,10 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
     }
 
     // trucate to the size of the certificate
-        char certBuffer[BUFFER_SIZE];
+        char certBuffer[BUFFER_SIZE]={0};
         int certSize = BIO_read(bio, certBuffer, sizeof(certBuffer));
+        if(certSize <= 0)
+		return;
         BIO_free(bio);
 
        std::cout << "size of certificate " +certSize;
@@ -96,6 +99,22 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
         // Send the certificate data to the client
         send(clientSocket, certBuffer, certSize, 0);
 
+        // receive the client DH public key 
+         EVP_PKEY* receivedKey = nullptr;
+
+    if (receiveEphemralPublicKey(clientSocket, receivedKey)) {
+        // Successfully received and deserialized the key
+
+        // Use the receivedKey as needed
+
+        // Don't forget to free the deserialized key when done
+        EVP_PKEY_free(receivedKey);
+    } else {
+        // Handle the case where receiving or deserialization failed
+        std::cerr << "Failed to receive or deserialize the key" << std::endl;
+        return;
+    }
+
         // Clean up
         X509_free(serverCert);
     } else {
@@ -103,7 +122,7 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
       
        
     }
-
+       
     // Close client socket
     close(clientSocket);
 }

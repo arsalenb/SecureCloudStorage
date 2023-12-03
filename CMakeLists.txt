@@ -11,8 +11,10 @@ find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
 add_executable(${PROJECT_NAME} main.cpp)
-add_executable(Server Server/server.cpp)
-add_executable(Client Client/client.cpp)
+add_executable(Server Server/server.cpp Util.cpp Diffie-Hellman.cpp)
+add_executable(Client Client/client.cpp Util.cpp Diffie-Hellman.cpp)
+
+target_include_directories(Server PRIVATE data)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenSSL::Crypto OpenSSL::SSL)
 target_link_libraries(Server PUBLIC OpenSSL::Crypto OpenSSL::SSL Threads::Threads)

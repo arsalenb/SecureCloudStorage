@@ -6,6 +6,7 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include "../Diffie-Hellman.h"
 using namespace std;
 const int PORT = 8080;
 const int MAX_CERTIFICATE_SIZE = 4096;
@@ -47,7 +48,7 @@ bool verifyServerCertificate(X509 * caCert, X509_CRL * crl, X509 *serverCert) {
 bool receiveServerCertificate(int clientSocket, X509*& serverCert) {
     // Receive the certificate size
     int certSize;
-    ssize_t bytesReceived = recv(clientSocket, &certSize, sizeof(certSize), 0);
+    ssize_t bytesReceived = recv(clientSocket, &certSize, sizeof(certSize), MSG_WAITALL);
     if (bytesReceived <= 0) {
         std::cerr << "Error receiving certificate size" << std::endl;
         return false;
@@ -60,7 +61,7 @@ bool receiveServerCertificate(int clientSocket, X509*& serverCert) {
 
     // Receive the certificate data
     char certBuffer[certSize]={0};
-    bytesReceived = recv(clientSocket, certBuffer, certSize, 0);
+    bytesReceived = recv(clientSocket, certBuffer, certSize, MSG_WAITALL);
     if (bytesReceived <= 0) {
         std::cerr << "Error receiving certificate data" << std::endl;
         return false;
@@ -146,7 +147,7 @@ int main() {
     // Receive result from server
     int responseSize=1;
     char buffer[responseSize+1] = {0}; //+1 for null terminator
-    ssize_t bytesRead = recv(clientSocket, buffer, responseSize, 0);
+    ssize_t bytesRead = recv(clientSocket, buffer, responseSize, MSG_WAITALL);
     if (bytesRead <= 0) {
         std::cerr << "Error receiving result from server" << std::endl;
     } else {
@@ -202,7 +203,40 @@ int main() {
 
         } else {
             std::cerr << "Server certificate verification failed." << std::endl;
+            return 0;
         }
+
+        // generate the diffie-Hellman keys for the client
+          EVP_PKEY *DH_Keys = diffieHellmanKeyGeneration();
+          int len_serialized_public_key = 0;
+
+         int keyLength;
+        char* serializedKey = serializePublicKey(DH_Keys, &keyLength);
+
+        if (serializedKey != NULL) {
+        // Use the serialized key as needed
+        
+        // Send the key size to the server
+        send(clientSocket, &keyLength, sizeof(keyLength), 0);
+
+        // send the DH public key to the server
+        send(clientSocket, serializedKey, keyLength, 0);
+
+        // Don't forget to free the allocated memory when done
+        free(serializedKey);
+        } else {
+            // Handle error, e.g., print an error message
+            fprintf(stderr, "Error serializing public key\n");
+            return 0;
+        }
+
+        // Cleanup OpenSSL (if not done already)
+        EVP_cleanup();
+
+
+          
+
+
             // Clean up
             X509_free(serverCert);
         } else {
