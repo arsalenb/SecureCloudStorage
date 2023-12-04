@@ -15,7 +15,7 @@ int main() {
 
     // Insert PEM-formatted X.509 certificate into the BIO
 
-    const char *pem_data =  "-----BEGIN CERTIFICATE-----\n"
+     const char *pem_data =  "-----BEGIN CERTIFICATE-----\n"
                             "MIIDsjCCApqgAwIBAgIGAYwIZOoPMA0GCSqGSIb3DQEBBQUAMGkxCzAJBgNVBAYT\n"
                             "AklUMRswGQYDVQQKDBJVbml2ZXJzaXR5IG9mIFBpc2ExIDAeBgNVBAsMF0NlcnRp\n"
                             "ZmljYXRpb24gQXV0aG9yaXR5MRswGQYDVQQDDBJVbml2ZXJzaXR5IG9mIFBpc2Ew\n"

@@ -94,7 +94,7 @@ return dhkeys;
 
 
 // serialize public key deffie-hellman
-char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength){
+unsigned char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength){
 	BIO* bio;
 	int ret;
 	
@@ -105,17 +105,30 @@ char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength){
 	ret = PEM_write_bio_PUBKEY(bio, DH_Keys);
 	if(ret != 1)
 		return NULL;
-	char keyBuffer[Max_Public_Key_Size]={0};
-     *keyLength = BIO_read(bio, keyBuffer, sizeof(keyBuffer));
-     if(*keyLength <= 0)
-		return NULL;
-        BIO_free(bio);
-	
-	return keyBuffer;
+
+        // Read the key into a dynamically allocated buffer
+    unsigned char* keyBuffer = NULL;
+    *keyLength = BIO_pending(bio);
+    if (*keyLength > 0) {
+        keyBuffer = (unsigned char*)malloc(*keyLength);
+        if (keyBuffer == NULL)
+            return NULL;
+
+        ret = BIO_read(bio, keyBuffer, *keyLength);
+        printf("Public Key:\n%s\n", keyBuffer);
+        if (ret <= 0) {
+            free(keyBuffer);
+            return NULL;
+        }
+    }
+
+    BIO_free(bio);
+
+    return keyBuffer;
 }
 
 //Function that allocates and returns the deserialized public key. It returns NULL in case of error
-EVP_PKEY* deserializePublicKey( char* buffer, int bufferLen){
+EVP_PKEY* deserializePublicKey( unsigned char* buffer, int bufferLen){
 	EVP_PKEY* pubKey;
 	int ret;
 	BIO* myBio;
@@ -130,4 +143,58 @@ EVP_PKEY* deserializePublicKey( char* buffer, int bufferLen){
 		return NULL;
 	BIO_free(myBio);
 	return pubKey;
+}
+
+
+int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey,unsigned char*& skey, size_t& skeylen) {
+    EVP_PKEY_CTX *derive_ctx;
+   
+    /* Creating a context for key derivation */
+    derive_ctx = EVP_PKEY_CTX_new(my_dhkey, NULL);
+    if (!derive_ctx) {
+        fprintf(stderr, "Error creating context\n");
+        return -1;
+    }
+
+    /* Initializing key derivation */
+    if (EVP_PKEY_derive_init(derive_ctx) <= 0) {
+        fprintf(stderr, "Error initializing key derivation\n");
+        EVP_PKEY_CTX_free(derive_ctx);
+        return -1;
+    }
+
+    /* Setting the peer with its public key */
+    if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0) {
+        fprintf(stderr, "Error setting peer public key\n");
+        EVP_PKEY_CTX_free(derive_ctx);
+        return -1;
+    }
+
+    /* Determine buffer length, by performing a derivation but writing the result nowhere */
+    if (EVP_PKEY_derive(derive_ctx, NULL, &skeylen) <= 0) {
+        fprintf(stderr, "Error determining buffer length\n");
+        EVP_PKEY_CTX_free(derive_ctx);
+        return -1;
+    }
+
+    /* Allocate buffer for the shared secret */
+    skey = (unsigned char *)(malloc(skeylen));
+    if (!skey) {
+        fprintf(stderr, "Error allocating memory for shared secret\n");
+        EVP_PKEY_CTX_free(derive_ctx);
+        return -1;
+    }
+
+    /* Perform the derivation and store it in skey buffer */
+    if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0) {
+        fprintf(stderr, "Error deriving shared secret\n");
+        free(skey);
+        EVP_PKEY_CTX_free(derive_ctx);
+        return -1;
+    }
+     printf("shared Key :\n%s\n", skey);
+
+    EVP_PKEY_CTX_free(derive_ctx);
+
+    return 0;  // Success
 }

@@ -16,7 +16,8 @@
 static DH* get_dh2048(void);
 int handleErrors();
 EVP_PKEY* diffieHellmanKeyGeneration();
-char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength);
-EVP_PKEY* deserializePublicKey( char* buffer, int bufferLen);
+unsigned char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength);
+EVP_PKEY* deserializePublicKey( unsigned char* buffer, int bufferLen);
+int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey,unsigned char*& skey, size_t& skeylen);
 
 #endif // MYOPENSSL_H

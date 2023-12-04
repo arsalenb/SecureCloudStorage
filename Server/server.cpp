@@ -19,7 +19,7 @@ const int MAX_USERNAME_LENGTH = 5;
 
 // Function to handle each connected client
 void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
-    char buffer[MAX_USERNAME_LENGTH+1] = {0}; // +1 for null terminator  
+   unsigned char buffer[MAX_USERNAME_LENGTH+1] = {0}; // +1 for null terminator  
     ssize_t bytesRead = recv(clientSocket, buffer, MAX_USERNAME_LENGTH, MSG_WAITALL);
 
     if (bytesRead <= 0) {
@@ -28,7 +28,7 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
         return;
     }
 
-    std::string receivedUserName(buffer);
+    std::string receivedUserName((const char *)buffer);
     std::cout << "Received username from client: " << receivedUserName << std::endl;
 
     // Check if username exists
@@ -85,7 +85,7 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
     }
 
     // trucate to the size of the certificate
-        char certBuffer[BUFFER_SIZE]={0};
+       unsigned char certBuffer[BUFFER_SIZE]={0};
         int certSize = BIO_read(bio, certBuffer, sizeof(certBuffer));
         if(certSize <= 0)
 		return;
@@ -100,23 +100,87 @@ void handleClient(int clientSocket, const std::vector<std::string>& userNames) {
         send(clientSocket, certBuffer, certSize, 0);
 
         // receive the client DH public key 
-         EVP_PKEY* receivedKey = nullptr;
+         EVP_PKEY* deserializedClientKey = nullptr;
+         unsigned char *serializedClienKey;
+         int serializedClientKeyLength;
 
-    if (receiveEphemralPublicKey(clientSocket, receivedKey)) {
-        // Successfully received and deserialized the key
-
-        // Use the receivedKey as needed
-
-        // Don't forget to free the deserialized key when done
-        EVP_PKEY_free(receivedKey);
-    } else {
+    if (!receiveEphemralPublicKey(clientSocket, deserializedClientKey,serializedClienKey,serializedClientKeyLength)) {
+    
         // Handle the case where receiving or deserialization failed
         std::cerr << "Failed to receive or deserialize the key" << std::endl;
         return;
     }
+       printf("serialized client Key :\n%s\n", serializedClienKey);
+    // generate the diffie-Hellman keys for the server
+        EVP_PKEY *DH_Keys = diffieHellmanKeyGeneration();
+        int len_serialized_public_key = 0;
+        // serialize the public key
+        int serializedServerKeyLength;
+        unsigned char* serializedServerKey = serializePublicKey(DH_Keys, &serializedServerKeyLength);
 
+        if (serializedServerKey == NULL) {
+              std::cerr << "Failed to serialize the key" << std::endl;
+            return;
+        }
+        unsigned char *skey;
+        size_t skeylen;
+        int  derivationResult = derive_shared_secret(DH_Keys, deserializedClientKey, skey, skeylen);
+       
+        if(derivationResult==-1)
+        {
+            return;
+        }
+        // concatinate (g^a,g^b)
+        // Concatenate the serialized keys
+        int concatenatedkeysLength=serializedServerKeyLength + serializedClientKeyLength;
+        unsigned char* concatenatedKeys = new unsigned char[concatenatedkeysLength];
+        memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
+        memcpy(concatenatedKeys + serializedServerKeyLength,serializedClienKey , serializedClientKeyLength);
+
+
+          printf("concatennated keys :\n%s\n", concatenatedKeys);
+        // Now concatenatedKeys contains the serialized form of both keys
+
+        // read server private key
+        // load server private key:
+        FILE* prvkey_file = fopen("server_private_key.pem", "r");
+
+        if(!prvkey_file){
+             cerr << "Error: cannot open server key file" ;
+             return;
+             }
+
+        EVP_PKEY* prvkey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, NULL);
+        fclose(prvkey_file);
+
+        if(!prvkey){ 
+            cerr << "Error: PEM_read_PrivateKey returned NULL\n";
+             return;
+             }
+
+            // create the digiatl signature
+             unsigned char* signature;
+            unsigned int signatureLength;
+             if (!generateDigitalSignature(concatenatedKeys, concatenatedkeysLength, prvkey, signature, signatureLength)) {
+                return;
+            } 
+             EVP_PKEY_free(prvkey);
+
+
+              printf("signature  :\n%s\n", signature);
+              
+
+
+
+        
+
+        // Don't forget to free memory
+        delete[] serializedClienKey;
+        delete[] serializedServerKey;
+        delete[] concatenatedKeys;
         // Clean up
         X509_free(serverCert);
+        EVP_PKEY_free(deserializedClientKey);
     } else {
         // If username does not exist
       

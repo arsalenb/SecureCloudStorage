@@ -60,7 +60,7 @@ bool receiveServerCertificate(int clientSocket, X509*& serverCert) {
     }
 
     // Receive the certificate data
-    char certBuffer[certSize]={0};
+    unsigned char certBuffer[certSize]={0};
     bytesReceived = recv(clientSocket, certBuffer, certSize, MSG_WAITALL);
     if (bytesReceived <= 0) {
         std::cerr << "Error receiving certificate data" << std::endl;
@@ -89,7 +89,7 @@ bool receiveServerCertificate(int clientSocket, X509*& serverCert) {
 // Print serial number
 ASN1_INTEGER* serialNumber = X509_get_serialNumber(serverCert);
 BIGNUM* bnSerial = ASN1_INTEGER_to_BN(serialNumber, nullptr);
-char* serialHex = BN_bn2hex(bnSerial);
+ char* serialHex = BN_bn2hex(bnSerial);
 
 cout << "Serial Number: " << serialHex<< endl;
 OPENSSL_free(serialHex);
@@ -146,12 +146,12 @@ int main() {
 
     // Receive result from server
     int responseSize=1;
-    char buffer[responseSize+1] = {0}; //+1 for null terminator
+    unsigned char buffer[responseSize+1] = {0}; //+1 for null terminator
     ssize_t bytesRead = recv(clientSocket, buffer, responseSize, MSG_WAITALL);
     if (bytesRead <= 0) {
         std::cerr << "Error receiving result from server" << std::endl;
     } else {
-        std::string serverResponse(buffer);
+        std::string serverResponse((const char *)buffer);
       std::cout << "Server response: " << buffer << std::endl;
 
     // Check the server response to determine the next steps
@@ -211,7 +211,7 @@ int main() {
           int len_serialized_public_key = 0;
 
          int keyLength;
-        char* serializedKey = serializePublicKey(DH_Keys, &keyLength);
+        unsigned char* serializedKey = serializePublicKey(DH_Keys, &keyLength);
 
         if (serializedKey != NULL) {
         // Use the serialized key as needed
@@ -242,7 +242,7 @@ int main() {
         } else {
             std::cerr << "Error receiving server certificate" << std::endl;
         }
-    } else if (strcmp(buffer, "0") == 0) {
+    } else if (strcmp((const char *)buffer, "0") == 0) {
         // User does not exist, handle accordingly (close the connection or take other actions)
         std::cerr << "User does not exist" << std::endl;
         // You might want to close the client socket or take other appropriate actions here
