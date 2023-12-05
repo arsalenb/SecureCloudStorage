@@ -233,12 +233,8 @@ int main() {
         // Cleanup OpenSSL (if not done already)
         EVP_cleanup();
 
-
-          
-
-
             // Clean up
-            X509_free(serverCert);
+        X509_free(serverCert);
         } else {
             std::cerr << "Error receiving server certificate" << std::endl;
         }
