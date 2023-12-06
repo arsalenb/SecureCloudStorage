@@ -13,11 +13,14 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-static DH* get_dh2048(void);
+static DH *get_dh2048(void);
 int handleErrors();
-EVP_PKEY* diffieHellmanKeyGeneration();
-unsigned char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength);
-EVP_PKEY* deserializePublicKey( unsigned char* buffer, int bufferLen);
-int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey,unsigned char*& skey, size_t& skeylen);
+EVP_PKEY *diffieHellmanKeyGeneration();
+unsigned char *serializePublicKey(EVP_PKEY *DH_Keys, int *keyLength);
+EVP_PKEY *deserializePublicKey(unsigned char *buffer, int bufferLen);
+int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey, unsigned char *&skey, size_t &skeylen);
+void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLength,
+                     const unsigned char *serializedServerKey, const unsigned char *serializedClientKey,
+                     unsigned char *&concatenatedKeys, int concatenatedkeysLength);
 
 #endif // MYOPENSSL_H

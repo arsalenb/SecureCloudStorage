@@ -86,3 +86,60 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
 
     return true;
 }
+
+bool decryptTextAES(unsigned char *cphr_buf, int cphr_size, unsigned char *sessionKey, unsigned char *iv, unsigned char *&clear_buf, int &clear_size)
+{
+    const EVP_CIPHER *cipher = EVP_aes_128_cbc();
+    int block_size = EVP_CIPHER_block_size(cipher);
+
+    int key_len = EVP_CIPHER_key_length(cipher);
+    unsigned char *key = (unsigned char *)malloc(key_len);
+    memcpy(key, sessionKey, key_len);
+
+    // Allocate memory for the decrypted text
+    clear_buf = (unsigned char *)malloc(cphr_size + block_size); // Maximum size
+
+    // Create and initialise the context with the used cipher, key, and iv
+    EVP_CIPHER_CTX *ctx;
+    ctx = EVP_CIPHER_CTX_new();
+    if (!ctx)
+    {
+        cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n";
+        return false;
+    }
+
+    int ret = EVP_DecryptInit(ctx, cipher, key, iv);
+    if (ret != 1)
+    {
+        cerr << "Error: DecryptInit Failed\n";
+        return false;
+    }
+
+    int update_len = 0; // bytes decrypted at each chunk
+    int total_len = 0;  // total decrypted bytes
+
+    // Decrypt Update: one call is enough because the data is small.
+    ret = EVP_DecryptUpdate(ctx, clear_buf, &update_len, cphr_buf, cphr_size);
+    if (ret != 1)
+    {
+        cerr << "Error: DecryptUpdate Failed\n";
+        return false;
+    }
+    total_len += update_len;
+
+    // Decrypt Final. Finalize the decryption and remove padding
+    ret = EVP_DecryptFinal(ctx, clear_buf + total_len, &update_len);
+    if (ret != 1)
+    {
+        cerr << "Error: DecryptFinal Failed\n";
+        return false;
+    }
+    total_len += update_len;
+
+    clear_size = total_len;
+
+    // Delete the context and the key from memory
+    EVP_CIPHER_CTX_free(ctx);
+
+    return true;
+}

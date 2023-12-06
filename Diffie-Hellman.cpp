@@ -11,7 +11,6 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-
 const int Max_Public_Key_Size = 2048;
 static DH *get_dh2048(void)
 {
@@ -41,11 +40,9 @@ static DH *get_dh2048(void)
         0xFB, 0xF3, 0x67, 0xF7, 0x4D, 0xED, 0x12, 0x28, 0x64, 0xB6,
         0x5A, 0xA7, 0xE0, 0xB6, 0x17, 0x1F, 0xFC, 0x26, 0xE3, 0x35,
         0x58, 0xB6, 0xA1, 0x0E, 0x30, 0x53, 0x7E, 0x8F, 0x2A, 0x1E,
-        0xE3, 0xAE, 0x44, 0xD0, 0x11, 0xA3
-    };
+        0xE3, 0xAE, 0x44, 0xD0, 0x11, 0xA3};
     static unsigned char dhg_2048[] = {
-        0x02
-    };
+        0x02};
     DH *dh = DH_new();
     BIGNUM *p, *g;
 
@@ -53,8 +50,8 @@ static DH *get_dh2048(void)
         return NULL;
     p = BN_bin2bn(dhp_2048, sizeof(dhp_2048), NULL);
     g = BN_bin2bn(dhg_2048, sizeof(dhg_2048), NULL);
-    if (p == NULL || g == NULL
-            || !DH_set0_pqg(dh, p, NULL, g)) {
+    if (p == NULL || g == NULL || !DH_set0_pqg(dh, p, NULL, g))
+    {
         DH_free(dh);
         BN_free(p);
         BN_free(g);
@@ -62,61 +59,68 @@ static DH *get_dh2048(void)
     }
     return dh;
 }
-int handleErrors(){
-	printf("An error occourred.\n");
-	exit(1);
+int handleErrors()
+{
+    printf("An error occourred.\n");
+    exit(1);
 }
 
+EVP_PKEY *diffieHellmanKeyGeneration()
+{
+    /*GENERATING  EPHEMERAL KEY*/
 
+    EVP_PKEY *params;
+    if (NULL == (params = EVP_PKEY_new()))
+        handleErrors();
+    DH *temp = get_dh2048();
+    if (1 != EVP_PKEY_set1_DH(params, temp))
+        handleErrors();
+    DH_free(temp);
+    /* Create context for the key generation */
+    EVP_PKEY_CTX *DHctx;
+    if (!(DHctx = EVP_PKEY_CTX_new(params, NULL)))
+        handleErrors();
+    /* Generate a new key */
+    EVP_PKEY *dhkeys = NULL;
+    if (1 != EVP_PKEY_keygen_init(DHctx))
+        handleErrors();
+    if (1 != EVP_PKEY_keygen(DHctx, &dhkeys))
+        handleErrors();
 
-EVP_PKEY* diffieHellmanKeyGeneration() {
-/*GENERATING  EPHEMERAL KEY*/
+    // FREE EVERYTHING INVOLVED WITH THE EXCHANGE (not the shared secret tho)
 
-EVP_PKEY *params;
-if(NULL == (params = EVP_PKEY_new())) handleErrors();
-DH* temp = get_dh2048();
-if(1 != EVP_PKEY_set1_DH(params,temp)) handleErrors();
-DH_free(temp);
-/* Create context for the key generation */
-EVP_PKEY_CTX *DHctx;
-if(!(DHctx = EVP_PKEY_CTX_new(params, NULL))) handleErrors();
-/* Generate a new key */
-EVP_PKEY *dhkeys = NULL;
-if(1 != EVP_PKEY_keygen_init(DHctx)) handleErrors();
-if(1 != EVP_PKEY_keygen(DHctx, &dhkeys)) handleErrors();
-
-//FREE EVERYTHING INVOLVED WITH THE EXCHANGE (not the shared secret tho)
-
-EVP_PKEY_CTX_free(DHctx);
-EVP_PKEY_free(params);
-return dhkeys;
+    EVP_PKEY_CTX_free(DHctx);
+    EVP_PKEY_free(params);
+    return dhkeys;
 }
-
 
 // serialize public key deffie-hellman
-unsigned char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength){
-	BIO* bio;
-	int ret;
-	
-	bio = BIO_new(BIO_s_mem());
-	if(bio == NULL)
-		return NULL;
-        // retrrive the public key 
-	ret = PEM_write_bio_PUBKEY(bio, DH_Keys);
-	if(ret != 1)
-		return NULL;
+unsigned char *serializePublicKey(EVP_PKEY *DH_Keys, int *keyLength)
+{
+    BIO *bio;
+    int ret;
 
-        // Read the key into a dynamically allocated buffer
-    unsigned char* keyBuffer = NULL;
+    bio = BIO_new(BIO_s_mem());
+    if (bio == NULL)
+        return NULL;
+    // retrrive the public key
+    ret = PEM_write_bio_PUBKEY(bio, DH_Keys);
+    if (ret != 1)
+        return NULL;
+
+    // Read the key into a dynamically allocated buffer
+    unsigned char *keyBuffer = NULL;
     *keyLength = BIO_pending(bio);
-    if (*keyLength > 0) {
-        keyBuffer = (unsigned char*)malloc(*keyLength);
+    if (*keyLength > 0)
+    {
+        keyBuffer = (unsigned char *)malloc(*keyLength);
         if (keyBuffer == NULL)
             return NULL;
 
         ret = BIO_read(bio, keyBuffer, *keyLength);
         printf("Public Key:\n%s\n", keyBuffer);
-        if (ret <= 0) {
+        if (ret <= 0)
+        {
             free(keyBuffer);
             return NULL;
         }
@@ -127,51 +131,56 @@ unsigned char* serializePublicKey(EVP_PKEY* DH_Keys, int* keyLength){
     return keyBuffer;
 }
 
-//Function that allocates and returns the deserialized public key. It returns NULL in case of error
-EVP_PKEY* deserializePublicKey( unsigned char* buffer, int bufferLen){
-	EVP_PKEY* pubKey;
-	int ret;
-	BIO* myBio;
-	myBio = BIO_new(BIO_s_mem());
-	if(myBio == NULL)
-		return NULL;
-	ret = BIO_write(myBio, buffer, bufferLen);
-	if(ret <= 0)
-		return NULL;
-	pubKey = PEM_read_bio_PUBKEY(myBio, NULL, NULL, NULL);
-	if(pubKey == NULL)
-		return NULL;
-	BIO_free(myBio);
-	return pubKey;
+// Function that allocates and returns the deserialized public key. It returns NULL in case of error
+EVP_PKEY *deserializePublicKey(unsigned char *buffer, int bufferLen)
+{
+    EVP_PKEY *pubKey;
+    int ret;
+    BIO *myBio;
+    myBio = BIO_new(BIO_s_mem());
+    if (myBio == NULL)
+        return NULL;
+    ret = BIO_write(myBio, buffer, bufferLen);
+    if (ret <= 0)
+        return NULL;
+    pubKey = PEM_read_bio_PUBKEY(myBio, NULL, NULL, NULL);
+    if (pubKey == NULL)
+        return NULL;
+    BIO_free(myBio);
+    return pubKey;
 }
 
-
-int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey,unsigned char*& skey, size_t& skeylen) {
+int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey, unsigned char *&skey, size_t &skeylen)
+{
     EVP_PKEY_CTX *derive_ctx;
-   
+
     /* Creating a context for key derivation */
     derive_ctx = EVP_PKEY_CTX_new(my_dhkey, NULL);
-    if (!derive_ctx) {
+    if (!derive_ctx)
+    {
         fprintf(stderr, "Error creating context\n");
         return -1;
     }
 
     /* Initializing key derivation */
-    if (EVP_PKEY_derive_init(derive_ctx) <= 0) {
+    if (EVP_PKEY_derive_init(derive_ctx) <= 0)
+    {
         fprintf(stderr, "Error initializing key derivation\n");
         EVP_PKEY_CTX_free(derive_ctx);
         return -1;
     }
 
     /* Setting the peer with its public key */
-    if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0) {
+    if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0)
+    {
         fprintf(stderr, "Error setting peer public key\n");
         EVP_PKEY_CTX_free(derive_ctx);
         return -1;
     }
 
     /* Determine buffer length, by performing a derivation but writing the result nowhere */
-    if (EVP_PKEY_derive(derive_ctx, NULL, &skeylen) <= 0) {
+    if (EVP_PKEY_derive(derive_ctx, NULL, &skeylen) <= 0)
+    {
         fprintf(stderr, "Error determining buffer length\n");
         EVP_PKEY_CTX_free(derive_ctx);
         return -1;
@@ -179,22 +188,38 @@ int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey,unsigned char
 
     /* Allocate buffer for the shared secret */
     skey = (unsigned char *)(malloc(skeylen));
-    if (!skey) {
+    if (!skey)
+    {
         fprintf(stderr, "Error allocating memory for shared secret\n");
         EVP_PKEY_CTX_free(derive_ctx);
         return -1;
     }
 
     /* Perform the derivation and store it in skey buffer */
-    if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0) {
+    if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0)
+    {
         fprintf(stderr, "Error deriving shared secret\n");
         free(skey);
         EVP_PKEY_CTX_free(derive_ctx);
         return -1;
     }
-     printf("shared Key :\n%s\n", skey);
+    printf("shared Key :\n%s\n", skey);
 
     EVP_PKEY_CTX_free(derive_ctx);
 
-    return 0;  // Success
+    return 0; // Success
+}
+
+// concatinate (g^b,g^a)
+void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLength,
+                     const unsigned char *serializedServerKey, const unsigned char *serializedClientKey,
+                     unsigned char *&concatenatedKeys, int concatenatedkeysLength)
+{
+
+    // Allocate memory for the concatenated keys
+    concatenatedKeys = (unsigned char *)malloc(concatenatedkeysLength);
+
+    // Concatenate the serialized keys
+    std::memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
+    std::memcpy(concatenatedKeys + serializedServerKeyLength, serializedClientKey, serializedClientKeyLength);
 }

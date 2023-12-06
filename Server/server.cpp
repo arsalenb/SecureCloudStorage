@@ -132,6 +132,8 @@ void handleClient(int clientSocket, const std::vector<std::string> &userNames)
             std::cerr << "Failed to serialize the key" << std::endl;
             return;
         }
+
+        // calculate (g^a)^b
         unsigned char *sharedSecretKey;
         size_t sharedSecretLength;
         int derivationResult = derive_shared_secret(DH_Keys, deserializedClientKey, sharedSecretKey, sharedSecretLength);
@@ -148,6 +150,7 @@ void handleClient(int clientSocket, const std::vector<std::string> &userNames)
         {
             return;
         }
+        // take first 128 of the the digest
         const EVP_CIPHER *cipher = EVP_aes_128_cbc();
 
         int sessionKeyLength = EVP_CIPHER_key_length(cipher);
@@ -166,32 +169,21 @@ void handleClient(int clientSocket, const std::vector<std::string> &userNames)
         free(digest);
         free(sharedSecretKey);
 
-        // concatinate (g^a,g^b)
+        // concatinate (g^b,g^a)
         // Concatenate the serialized keys
+        unsigned char *concatenatedKeys = nullptr;
         int concatenatedkeysLength = serializedServerKeyLength + serializedClientKeyLength;
-        unsigned char *concatenatedKeys = new unsigned char[concatenatedkeysLength];
-        memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
-        memcpy(concatenatedKeys + serializedServerKeyLength, serializedClienKey, serializedClientKeyLength);
+        concatenateKeys(serializedServerKeyLength, serializedClientKeyLength,
+                        serializedServerKey, serializedClienKey, concatenatedKeys, concatenatedkeysLength);
 
         printf("concatennated keys :\n%s\n", concatenatedKeys);
         // Now concatenatedKeys contains the serialized form of both keys
 
         // read server private key
         // load server private key:
-        FILE *prvkey_file = fopen("server_private_key.pem", "r");
-
-        if (!prvkey_file)
+        EVP_PKEY *prvkey = nullptr;
+        if (!loadPrivateKey("server_private_key.pem", prvkey))
         {
-            cerr << "Error: cannot open server key file";
-            return;
-        }
-
-        EVP_PKEY *prvkey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, NULL);
-        fclose(prvkey_file);
-
-        if (!prvkey)
-        {
-            cerr << "Error: PEM_read_PrivateKey returned NULL\n";
             return;
         }
 
@@ -218,6 +210,15 @@ void handleClient(int clientSocket, const std::vector<std::string> &userNames)
         }
 
         // send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
+
+        unsigned char *sendBuffer = nullptr;
+        if (!serializeLoginMessageFromTheServer(serializedServerKey, serializedServerKeyLength,
+                                                cipher_text, iv, sendBuffer))
+        {
+            return;
+        }
+        int sendBufferSize = calLengthLoginMessageFromTheServer();
+        send(clientSocket, sendBuffer, sendBufferSize, 0);
 
         free(cipher_text);
 

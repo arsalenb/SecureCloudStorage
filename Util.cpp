@@ -10,9 +10,14 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include "Diffie-Hellman.h"
+#include "../Util.h"
 
 using namespace std;
-const int Max_Public_Key_Size = 2048;
+
+size_t calLengthLoginMessageFromTheServer()
+{
+    return Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size + CBC_IV_Length;
+}
 
 bool receiveEphemralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsigned char *&serializedKey, int &serializedKeyLength)
 {
@@ -24,7 +29,7 @@ bool receiveEphemralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsi
         std::cerr << "Error receiving Key size" << std::endl;
         return false;
     }
-    if (serializedKeyLength > Max_Public_Key_Size)
+    if (serializedKeyLength > Max_Ephemral_Public_Key_Size)
     {
         std::cerr << "Key size exceeds the max size" << std::endl;
         return false;
@@ -94,6 +99,44 @@ bool generateDigitalSignature(unsigned char *data, size_t dataLength, EVP_PKEY *
 
     return true;
 }
+
+bool verifyDigitalSignature(unsigned char *data, size_t dataLength, unsigned char *signature, unsigned int signatureLength, EVP_PKEY *publicKey)
+{
+    const EVP_MD *md = EVP_sha256();
+
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    if (!ctx)
+    {
+        // Handle error
+        return false;
+    }
+
+    int ret;
+    ret = EVP_VerifyInit(ctx, md);
+    if (ret == 0)
+    {
+        cerr << "Error: EVP_VerifyInit returned " << ret << "\n";
+        return false;
+    }
+    ret = EVP_VerifyUpdate(ctx, data, dataLength);
+    if (ret == 0)
+    {
+        cerr << "Error: EVP_VerifyUpdate returned " << ret << "\n";
+        return false;
+    }
+    ret = EVP_VerifyFinal(ctx, signature, signatureLength, publicKey);
+
+    if (ret != 1)
+    {
+        cerr << "Error: Signature verification failed\n";
+        return false;
+    }
+
+    EVP_MD_CTX_free(ctx);
+
+    return true;
+}
+
 bool computeSHA256Digest(unsigned char *data, size_t dataLength, unsigned char *&digest, unsigned int &digestLength)
 {
     // Create and init context
@@ -137,27 +180,68 @@ bool computeSHA256Digest(unsigned char *data, size_t dataLength, unsigned char *
     return true;
 }
 
-bool serializeLoginMessageFromTheServer(unsigned char *serializedServerKey, int serializedServerKeyLength,
-                                        unsigned char *cipher_text, int cipher_size, const unsigned char *iv, unsigned char *&sendBuffer)
+bool serializeLoginMessageFromTheServer(unsigned char *serializedServerEphemralKey, int serializedServerrEphemralKeyLength,
+                                        unsigned char *cipher_text, unsigned char *iv, unsigned char *&sendBuffer)
 {
 
     // Calculate the total length of the data to be sent
-    size_t totalLength = serializedServerKeyLength + sizeof(int) + cipher_size + EVP_CIPHER_iv_length(EVP_aes_128_cbc());
+    size_t totalLength = calLengthLoginMessageFromTheServer();
 
     // Allocate a buffer to hold the concatenated data
     sendBuffer = (unsigned char *)(malloc(totalLength));
 
     // Copy serializedServerKey to the buffer
-    std::memcpy(sendBuffer, serializedServerKey, serializedServerKeyLength);
+    std::memcpy(sendBuffer, serializedServerEphemralKey, Max_Ephemral_Public_Key_Size);
 
     // Copy serializedServerKeyLength to the buffer
-    std::memcpy(sendBuffer + serializedServerKeyLength, &serializedServerKeyLength, sizeof(int));
+    std::memcpy(sendBuffer + Max_Ephemral_Public_Key_Size, &serializedServerrEphemralKeyLength, sizeof(int));
 
     // Copy cipher_text to the buffer
-    std::memcpy(sendBuffer + serializedServerKeyLength + sizeof(int), cipher_text, cipher_size);
+    std::memcpy(sendBuffer + Max_Ephemral_Public_Key_Size + sizeof(int), cipher_text, Encrypted_Signature_Size);
 
     // Copy iv to the buffer
-    std::memcpy(sendBuffer + serializedServerKeyLength + sizeof(int) + cipher_size, iv, EVP_CIPHER_iv_length(EVP_aes_128_cbc()));
+    std::memcpy(sendBuffer + Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size, iv, CBC_IV_Length);
+
+    return true;
+}
+
+bool deserializeLoginMessageFromTheServer(unsigned char *receivedBuffer,
+                                          unsigned char *&serializedServerEphemralKey, int &serializedServerrEphemralKeyLength,
+                                          unsigned char *&cipher_text, unsigned char *&iv)
+{
+
+    // Allocate memory for the individual components
+    serializedServerEphemralKey = (unsigned char *)(malloc(Max_Ephemral_Public_Key_Size));
+    cipher_text = (unsigned char *)(malloc(Encrypted_Signature_Size));
+    iv = (unsigned char *)(malloc(EVP_CIPHER_iv_length(EVP_aes_128_cbc())));
+
+    // Copy data from the received buffer to the individual components
+    std::memcpy(serializedServerEphemralKey, receivedBuffer, Max_Ephemral_Public_Key_Size);
+    std::memcpy(&serializedServerrEphemralKeyLength, receivedBuffer + Max_Ephemral_Public_Key_Size, sizeof(int));
+    std::memcpy(cipher_text, receivedBuffer + Max_Ephemral_Public_Key_Size + sizeof(int), Encrypted_Signature_Size);
+    std::memcpy(iv, receivedBuffer + Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size, CBC_IV_Length);
+
+    return true;
+}
+
+bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
+{
+    FILE *prvkey_file = fopen(privateKeyPath.c_str(), "r");
+
+    if (!prvkey_file)
+    {
+        std::cerr << "Error: Cannot open private key file: " << privateKeyPath << "\n";
+        return false;
+    }
+
+    privateKey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, NULL);
+    fclose(prvkey_file);
+
+    if (!privateKey)
+    {
+        std::cerr << "Error: PEM_read_PrivateKey returned NULL\n";
+        return false;
+    }
 
     return true;
 }
