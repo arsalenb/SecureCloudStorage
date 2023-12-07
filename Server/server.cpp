@@ -237,7 +237,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         if (bytesReceived <= 0)
         {
             std::cerr << "Error receiving  data" << std::endl;
-            return;
+            return 0;
         }
 
         // Variables to store the deserialized components {<(g^a,g^b)>c}k, IV
@@ -248,26 +248,26 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         if (!deserializeLoginMessageFromTheClient(receiveBuffer, cipher_text, iv))
         {
             std::cerr << "Error deseiralizing the message" << std::endl;
-            return;
+            return 0;
         }
         // decrypt  {<(g^a,g^b)>c}k  using the session key
         unsigned char *plaintext = nullptr;
         int plaintextSize = 0;
         if (!decryptTextAES(cipher_text, Encrypted_Signature_Size, sessionKey, iv, plaintext, plaintextSize))
         {
-            return;
+            return 0;
         }
         // load user public key
         std::string publicKeyPath = "users/" + receivedUsername + "/public.pem";
         EVP_PKEY *client_public_key = nullptr;
         if (!loadPublicKey(publicKeyPath, client_public_key))
         {
-            return;
+            return 0;
         }
 
         if (!verifyDigitalSignature(concatenatedKeys, concatenatedkeysLength, plaintext, plaintextSize, client_public_key))
         {
-            return;
+            return 0;
         }
 
         // free memory
