@@ -10,203 +10,240 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <openssl/ec.h>
+#include <openssl/evp.h>
+
+using namespace std;
 
 const int Max_Public_Key_Size = 2048;
-static DH *get_dh2048(void)
-{
-    static unsigned char dhp_2048[] = {
-        0xD5, 0x07, 0x6B, 0x74, 0x73, 0x27, 0x2D, 0xB6, 0x67, 0x12,
-        0x98, 0xED, 0x46, 0xF3, 0x23, 0x4E, 0xF3, 0x64, 0xB6, 0x29,
-        0x9D, 0x52, 0x9F, 0x3A, 0xDC, 0xAB, 0xFA, 0x26, 0x89, 0xD1,
-        0x30, 0x59, 0x29, 0x63, 0x8C, 0xAC, 0x72, 0x95, 0x9D, 0xDF,
-        0xDC, 0x4A, 0x5A, 0x87, 0xF1, 0xC6, 0x35, 0x2E, 0xA9, 0x66,
-        0x68, 0xD5, 0xE7, 0x4A, 0x5F, 0x53, 0xA7, 0x04, 0x4F, 0x9D,
-        0xB6, 0x51, 0x0B, 0x07, 0x27, 0xB9, 0x8A, 0x77, 0x93, 0x3E,
-        0x45, 0x27, 0xAD, 0xE3, 0xF7, 0x1B, 0xBD, 0x9C, 0xF9, 0x5B,
-        0x5F, 0x43, 0xA1, 0x65, 0xA1, 0xE0, 0xA3, 0x71, 0xBD, 0x1D,
-        0x51, 0xAA, 0x71, 0xAB, 0x65, 0xB1, 0x87, 0x8D, 0xD3, 0x8E,
-        0x7C, 0xB9, 0x99, 0x77, 0xF1, 0xA8, 0xC6, 0xDD, 0xE9, 0x2E,
-        0x0B, 0x6D, 0x15, 0x23, 0xBF, 0x6F, 0x66, 0x82, 0x09, 0xF5,
-        0xDE, 0xAA, 0x4F, 0x30, 0xCE, 0xD1, 0x5B, 0xD6, 0xFD, 0x50,
-        0x28, 0xCC, 0x38, 0x40, 0x8B, 0x4A, 0xC9, 0x9C, 0x01, 0xDC,
-        0x5E, 0xA8, 0x02, 0x30, 0xF0, 0xDF, 0x68, 0x15, 0x88, 0xC1,
-        0x5A, 0x6D, 0x62, 0x82, 0xAB, 0x48, 0x05, 0x29, 0xDE, 0x30,
-        0x90, 0x24, 0x5D, 0x4D, 0x1D, 0xB0, 0x1D, 0xF2, 0x3C, 0xC7,
-        0xDB, 0xCF, 0x25, 0x6F, 0x5E, 0xA4, 0x39, 0x7D, 0x84, 0x84,
-        0x43, 0x3F, 0xEE, 0x93, 0x29, 0x04, 0xC0, 0xE0, 0x0B, 0x50,
-        0x1B, 0x37, 0x72, 0x8F, 0x02, 0x5F, 0xEB, 0x7B, 0x60, 0x0B,
-        0xA5, 0xF4, 0xAC, 0x01, 0xA2, 0x8D, 0x33, 0xB0, 0xA1, 0x77,
-        0xEC, 0xEF, 0x47, 0xE2, 0x6C, 0xB6, 0x1E, 0xE5, 0x41, 0x50,
-        0xFB, 0xF3, 0x67, 0xF7, 0x4D, 0xED, 0x12, 0x28, 0x64, 0xB6,
-        0x5A, 0xA7, 0xE0, 0xB6, 0x17, 0x1F, 0xFC, 0x26, 0xE3, 0x35,
-        0x58, 0xB6, 0xA1, 0x0E, 0x30, 0x53, 0x7E, 0x8F, 0x2A, 0x1E,
-        0xE3, 0xAE, 0x44, 0xD0, 0x11, 0xA3};
-    static unsigned char dhg_2048[] = {
-        0x02};
-    DH *dh = DH_new();
-    BIGNUM *p, *g;
 
-    if (dh == NULL)
-        return NULL;
-    p = BN_bin2bn(dhp_2048, sizeof(dhp_2048), NULL);
-    g = BN_bin2bn(dhg_2048, sizeof(dhg_2048), NULL);
-    if (p == NULL || g == NULL || !DH_set0_pqg(dh, p, NULL, g))
+/// @brief Generates an elliptic curve diffie–hellman key paremeters and a key
+/// @return EVP_PKEY on success, nullptr on failure,
+EVP_PKEY *ECDHKeyGeneration()
+{
+
+    EVP_PKEY_CTX *paramsCtx, *keyCtx;
+    EVP_PKEY *ECDHparams = NULL, *pKey = NULL;
+
+    /* Create the context for ECDH parameter generation */
+    if (!(paramsCtx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL)))
     {
-        DH_free(dh);
-        BN_free(p);
-        BN_free(g);
-        return NULL;
-    }
-    return dh;
-}
-int handleErrors()
-{
-    printf("An error occourred.\n");
-    exit(1);
-}
-
-EVP_PKEY *diffieHellmanKeyGeneration()
-{
-    /*GENERATING  EPHEMERAL KEY*/
-
-    EVP_PKEY *params;
-    if (NULL == (params = EVP_PKEY_new()))
-        handleErrors();
-    DH *temp = get_dh2048();
-    if (1 != EVP_PKEY_set1_DH(params, temp))
-        handleErrors();
-    DH_free(temp);
-    /* Create context for the key generation */
-    EVP_PKEY_CTX *DHctx;
-    if (!(DHctx = EVP_PKEY_CTX_new(params, NULL)))
-        handleErrors();
-    /* Generate a new key */
-    EVP_PKEY *dhkeys = NULL;
-    if (1 != EVP_PKEY_keygen_init(DHctx))
-        handleErrors();
-    if (1 != EVP_PKEY_keygen(DHctx, &dhkeys))
-        handleErrors();
-
-    // FREE EVERYTHING INVOLVED WITH THE EXCHANGE (not the shared secret tho)
-
-    EVP_PKEY_CTX_free(DHctx);
-    EVP_PKEY_free(params);
-    return dhkeys;
-}
-
-// serialize public key deffie-hellman
-unsigned char *serializePublicKey(EVP_PKEY *DH_Keys, int *keyLength)
-{
-    BIO *bio;
-    int ret;
-
-    bio = BIO_new(BIO_s_mem());
-    if (bio == NULL)
-        return NULL;
-    // retrrive the public key
-    ret = PEM_write_bio_PUBKEY(bio, DH_Keys);
-    if (ret != 1)
-        return NULL;
-
-    // Read the key into a dynamically allocated buffer
-    unsigned char *keyBuffer = NULL;
-    *keyLength = BIO_pending(bio);
-    if (*keyLength > 0)
-    {
-        keyBuffer = (unsigned char *)malloc(*keyLength);
-        if (keyBuffer == NULL)
-            return NULL;
-
-        ret = BIO_read(bio, keyBuffer, *keyLength);
-        printf("Public Key:\n%s\n", keyBuffer);
-        if (ret <= 0)
-        {
-            free(keyBuffer);
-            return NULL;
-        }
+        cerr << "[ECDH] DH context creation failed" << endl;
+        return nullptr;
     }
 
+    /* Initialise the parameter generation */
+    if (1 != EVP_PKEY_paramgen_init(paramsCtx))
+    {
+        cerr << "[ECDH] DH parameters generation initialisation failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        return nullptr;
+    }
+
+    /* We choose ANSI X9.62 Prime 256v1 curve */
+    if (1 != EVP_PKEY_CTX_set_ec_paramgen_curve_nid(paramsCtx, NID_X9_62_prime256v1))
+    {
+        cerr << "[ECDH] DH parameters generation failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        return nullptr;
+    }
+
+    /* Generate the ECDH parameters */
+    if (!EVP_PKEY_paramgen(paramsCtx, &ECDHparams))
+    {
+        cerr << "[ECDH] DH parameters generation failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        EVP_PKEY_free(ECDHparams);
+        return nullptr;
+    }
+
+    /* Create the context in order to generate key initialized with ECDH params */
+    if (!(keyCtx = EVP_PKEY_CTX_new(ECDHparams, NULL)))
+    {
+        cerr << "[ECDH] Key generation context creation failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        EVP_PKEY_free(ECDHparams);
+        return nullptr;
+    }
+
+    /* Initialise and generate the private key (includes public key) */
+    if (1 != EVP_PKEY_keygen_init(keyCtx))
+    {
+        cerr << "[ECDH] Key generation  failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        EVP_PKEY_CTX_free(keyCtx);
+        EVP_PKEY_free(ECDHparams);
+        return nullptr;
+    }
+    if (1 != EVP_PKEY_keygen(keyCtx, &pKey))
+    {
+        cerr << "[ECDH] Key generation  failed" << endl;
+        EVP_PKEY_CTX_free(paramsCtx);
+        EVP_PKEY_CTX_free(keyCtx);
+        EVP_PKEY_free(ECDHparams);
+        return nullptr;
+    }
+
+    // Free memory
+    EVP_PKEY_CTX_free(paramsCtx);
+    EVP_PKEY_CTX_free(keyCtx);
+    EVP_PKEY_free(ECDHparams);
+
+    return pKey;
+}
+
+/// @brief Serializes an ECDH public key to a memory buffer in PEM format.
+/// @param public_key EVP_PKEY object representing the public key to be serialized.
+/// @param sKeyBuffer A reference to the buffer where the serialized key will be stored.
+/// @param sKeyLength A reference to the size_t variable that will store the length of the serialized key.
+/// @return 1 on success, 0 on failure.
+int serializePubKey(EVP_PKEY *public_key, unsigned char *&sKeyBuffer, size_t &sKeyLength)
+{
+    // Allocate an instance of the BIO structure for serialization
+    BIO *bio = BIO_new(BIO_s_mem());
+
+    if (!bio)
+    {
+        cerr << "[ECDH] Failed to create BIO" << endl;
+        return 0;
+    }
+
+    // Serialize a key into PEM format and write it in the BIO
+    if (PEM_write_bio_PUBKEY(bio, public_key) != 1)
+    {
+        cerr << "[ECDH] Failed to write public key into BIO" << endl;
+        BIO_free(bio);
+        return 0;
+    }
+    // Set of the pointer key_buffer to the buffer of the memory bio and return its size
+    sKeyLength = BIO_get_mem_data(bio, &sKeyBuffer);
+
+    // Allocate memory for the serialized key
+    sKeyBuffer = (unsigned char *)malloc(sKeyLength);
+
+    if (!sKeyBuffer)
+    {
+        cerr << "[ECDH] malloc of the buffer for serialized key failed" << endl;
+        return 0;
+    }
+
+    // Read data from bio and extract serialized key
+    int res = BIO_read(bio, sKeyBuffer, sKeyLength);
+    if (res < 1)
+    {
+        cerr << "[ECDH] BIO_read failed" << endl;
+        return 0;
+    }
+
+    // Cleanup
     BIO_free(bio);
 
-    return keyBuffer;
+    return 1;
 }
 
-// Function that allocates and returns the deserialized public key. It returns NULL in case of error
-EVP_PKEY *deserializePublicKey(unsigned char *buffer, int bufferLen)
+/// @brief Deserializes an ECDH public key from a buffer
+/// @param sKeyBuffer Pointer to the buffer containing the serialized public key
+/// @param sKeyLength Length of the serialized public key buffer
+/// @return pointer to the deserialized public key (EVP_PKEY*) on success, or nullptr on failure
+EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength)
 {
     EVP_PKEY *pubKey;
     int ret;
-    BIO *myBio;
-    myBio = BIO_new(BIO_s_mem());
-    if (myBio == NULL)
-        return NULL;
-    ret = BIO_write(myBio, buffer, bufferLen);
+    BIO *bio;
+
+    // Allocate an instance of the BIO structure for deserialization
+    bio = BIO_new(BIO_s_mem());
+    if (!bio)
+    {
+        cerr << "[ECDH] Failed to create BIO" << endl;
+        return nullptr;
+    }
+
+    // Write serialized the key from the buffer in bio
+    ret = BIO_write(bio, sKeyBuffer, sKeyLength);
     if (ret <= 0)
-        return NULL;
-    pubKey = PEM_read_bio_PUBKEY(myBio, NULL, NULL, NULL);
-    if (pubKey == NULL)
-        return NULL;
-    BIO_free(myBio);
+    {
+        cerr << "[ECDH] BIO_write failed" << endl;
+        return nullptr;
+    }
+    // Reads a key written in PEM format from the bio and deserialize it
+    pubKey = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
+    if (!pubKey)
+    {
+        cerr << "[ECDH] PEM_read_bio_PUBKEY failed" << endl;
+        return nullptr;
+    }
+
+    BIO_free(bio);
     return pubKey;
 }
 
-int derive_shared_secret(EVP_PKEY *my_dhkey, EVP_PKEY *peer_pubkey, unsigned char *&skey, size_t &skeylen)
+/// @brief Function to derive a shared secret using Elliptic Curve Diffie-Hellman (ECDH)
+/// @param hostKey The ECDH public key of the host
+/// @param peerKey The ECDH public key of the peer
+/// @param sharedKey  a pointer that will hold the derived shared secret
+/// @param sharedKeyLength Reference to a size_t variable that will hold the length of the derived shared secret
+/// @return 1 on success, 0 on failure
+int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sharedKey, size_t &sharedKeyLength)
 {
-    EVP_PKEY_CTX *derive_ctx;
 
-    /* Creating a context for key derivation */
-    derive_ctx = EVP_PKEY_CTX_new(my_dhkey, NULL);
-    if (!derive_ctx)
+    // Create a new context for deriving ECDH secret
+    EVP_PKEY_CTX *deriveCtx = EVP_PKEY_CTX_new(hostKey, NULL);
+    if (!deriveCtx)
     {
-        fprintf(stderr, "Error creating context\n");
-        return -1;
+        cerr << "[ECDH] shared key derivation context creation failed" << endl;
+        return 0;
     }
 
-    /* Initializing key derivation */
-    if (EVP_PKEY_derive_init(derive_ctx) <= 0)
+    // Initializing key derivation
+    if (1 != EVP_PKEY_derive_init(deriveCtx))
     {
-        fprintf(stderr, "Error initializing key derivation\n");
-        EVP_PKEY_CTX_free(derive_ctx);
-        return -1;
+        cerr << "[ECDH] shared key derivation initialization failed" << endl;
+        EVP_PKEY_CTX_free(deriveCtx);
+        return 0;
     }
 
-    /* Setting the peer with its public key */
-    if (EVP_PKEY_derive_set_peer(derive_ctx, peer_pubkey) <= 0)
+    // Provide peer public key
+    if (1 != EVP_PKEY_derive_set_peer(deriveCtx, peerKey))
     {
-        fprintf(stderr, "Error setting peer public key\n");
-        EVP_PKEY_CTX_free(derive_ctx);
-        return -1;
+        cerr << "[ECDH] setting peer public key failed" << endl;
+        EVP_PKEY_CTX_free(deriveCtx);
+        return 0;
     }
 
-    /* Determine buffer length, by performing a derivation but writing the result nowhere */
-    if (EVP_PKEY_derive(derive_ctx, NULL, &skeylen) <= 0)
+    // Determine buffer length for shared secret
+    if (1 != EVP_PKEY_derive(deriveCtx, NULL, &sharedKeyLength))
     {
-        fprintf(stderr, "Error determining buffer length\n");
-        EVP_PKEY_CTX_free(derive_ctx);
-        return -1;
+        cerr << "[ECDH] determining buffer length failed" << endl;
+        EVP_PKEY_CTX_free(deriveCtx);
+        return 0;
     }
 
-    /* Allocate buffer for the shared secret */
-    skey = (unsigned char *)(malloc(skeylen));
-    if (!skey)
+    // create the buffer
+    sharedKey = (unsigned char *)(malloc(sharedKeyLength));
+    if (!sharedKey)
     {
-        fprintf(stderr, "Error allocating memory for shared secret\n");
-        EVP_PKEY_CTX_free(derive_ctx);
-        return -1;
+        cerr << "[ECDH] allocating memory for shared secret failed" << endl;
+        EVP_PKEY_CTX_free(deriveCtx);
+        return 0;
     }
 
-    /* Perform the derivation and store it in skey buffer */
-    if (EVP_PKEY_derive(derive_ctx, skey, &skeylen) <= 0)
+    // Perform the derivation of secret and store it in buffer
+    if (1 != EVP_PKEY_derive(deriveCtx, sharedKey, &sharedKeyLength))
     {
-        fprintf(stderr, "Error deriving shared secret\n");
-        free(skey);
-        EVP_PKEY_CTX_free(derive_ctx);
-        return -1;
+        cerr << "[ECDH] shared secret derivation failed" << endl;
+        free(sharedKey);
+        EVP_PKEY_CTX_free(deriveCtx);
+        return 0;
     }
-    printf("shared Key :\n%s\n", skey);
+    for (int i = 0; i < sharedKeyLength; i++)
+    {
+        printf("%02X", sharedKey[i]);
+    }
 
-    EVP_PKEY_CTX_free(derive_ctx);
+    EVP_PKEY_CTX_free(deriveCtx);
 
+    return 1;
     return 0; // Success
 }
 

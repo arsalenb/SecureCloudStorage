@@ -19,10 +19,10 @@ size_t calLengthLoginMessageFromTheServer()
     return Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size + CBC_IV_Length;
 }
 
-bool receiveEphemralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsigned char *&serializedKey, int &serializedKeyLength)
+bool receiveEphemralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsigned char *&serializedKey, size_t &serializedKeyLength)
 {
-    // Receive the certificate size
 
+    // Receive the certificate size
     ssize_t bytesReceived = recv(clientSocket, &serializedKeyLength, sizeof(serializedKeyLength), MSG_WAITALL);
     if (bytesReceived <= 0)
     {

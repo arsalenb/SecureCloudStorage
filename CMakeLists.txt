@@ -10,7 +10,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/Server)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME} main.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
 add_executable(Server Server/server.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
 add_executable(Client Client/client.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
 

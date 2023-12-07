@@ -179,7 +179,6 @@ int main()
             if (receiveServerCertificate(clientSocket, serverCert))
             {
                 // Use the server certificate as needed
-
                 std::cout << "Received server certificate successfully" << std::endl;
 
                 const char *caCertFile = "Cloud Storage CA_cert.pem";
@@ -232,27 +231,30 @@ int main()
                     return 0;
                 }
 
-                // generate the diffie-Hellman keys for the client a, and g^a
-                EVP_PKEY *DH_Keys = diffieHellmanKeyGeneration();
-                int len_serialized_public_key = 0;
-
-                int serializedClientKeyLength;
-                unsigned char *serializedClientKey = serializePublicKey(DH_Keys, &serializedClientKeyLength);
-
-                if (serializedClientKey == NULL)
+                // Generate the elliptic curve diffie-Hellman keys for the client
+                EVP_PKEY *ECDH_Keys;
+                if (!(ECDH_Keys = ECDHKeyGeneration()))
                 {
-                    // Handle error, e.g., print an error message
-                    fprintf(stderr, "Error serializing public key\n");
+                    cerr << "[CLIENT] ECDH key generation failed" << endl;
+                    return 0;
+                }
+
+                unsigned char *sClientKey;
+                size_t sClientKeyLength;
+
+                if (!serializePubKey(ECDH_Keys, sClientKey, sClientKeyLength))
+                {
+                    cerr << "[CLIENT] Serialization of public key failed" << endl;
                     return 0;
                 }
 
                 // Use the serialized key as needed
 
                 // Send the key size to the server
-                send(clientSocket, &serializedClientKeyLength, sizeof(serializedClientKeyLength), 0);
+                send(clientSocket, &sClientKeyLength, sizeof(&sClientKeyLength), 0);
 
                 // send the DH public key to the server
-                send(clientSocket, serializedClientKey, serializedClientKeyLength, 0);
+                send(clientSocket, sClientKey, sClientKeyLength, 0);
 
                 // receive from the server: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
 
@@ -266,22 +268,22 @@ int main()
                 }
 
                 // Variables to store the deserialized components (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
-                unsigned char *serializedServerEphemralKey = nullptr;
-                int serializedServerEphemralKeyLength = 0;
+                unsigned char *sServerEphemeralKey = nullptr;
+                int sServerEphemeralKeyLength = 0;
                 unsigned char *cipher_text = nullptr;
                 unsigned char *iv = nullptr;
 
                 // Call the deserialize function
                 bool result = deserializeLoginMessageFromTheServer(receiveBuffer,
-                                                                   serializedServerEphemralKey, serializedServerEphemralKeyLength,
+                                                                   sServerEphemeralKey, sServerEphemeralKeyLength,
                                                                    cipher_text, iv);
-                if (serializedServerEphemralKeyLength > Max_Ephemral_Public_Key_Size)
+                if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
                 {
                     std::cerr << "Key size exceeds the max size" << std::endl;
                     return 0;
                 }
 
-                EVP_PKEY *deserializedServerEphemeralKey = deserializePublicKey(serializedServerEphemralKey, serializedServerEphemralKeyLength);
+                EVP_PKEY *deserializedServerEphemeralKey = deserializePublicKey(sServerEphemeralKey, sServerEphemeralKeyLength);
                 if (deserializedServerEphemeralKey == NULL)
                 {
                     std::cerr << "Error receiving serializing data" << std::endl;
@@ -291,7 +293,7 @@ int main()
                 // calculate (g^a)^b
                 unsigned char *sharedSecretKey;
                 size_t sharedSecretLength;
-                int derivationResult = derive_shared_secret(DH_Keys, deserializedServerEphemeralKey, sharedSecretKey, sharedSecretLength);
+                int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedServerEphemeralKey, sharedSecretKey, sharedSecretLength);
 
                 if (derivationResult == -1)
                 {
@@ -328,9 +330,9 @@ int main()
                 // concatinate (g^b,g^a)
                 // Concatenate the serialized keys
                 unsigned char *concatenatedKeys = nullptr;
-                int concatenatedkeysLength = serializedServerEphemralKeyLength + serializedClientKeyLength;
-                concatenateKeys(serializedServerEphemralKeyLength, serializedClientKeyLength,
-                                serializedServerEphemralKey, serializedClientKey, concatenatedKeys, concatenatedkeysLength);
+                int concatenatedkeysLength = sServerEphemeralKeyLength + sClientKeyLength;
+                concatenateKeys(sServerEphemeralKeyLength, sClientKeyLength,
+                                sServerEphemeralKey, sClientKey, concatenatedKeys, concatenatedkeysLength);
 
                 printf("concatennated keys :\n%s\n", concatenatedKeys);
 
