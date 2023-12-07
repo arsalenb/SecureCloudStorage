@@ -186,7 +186,6 @@ EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength)
 /// @return 1 on success, 0 on failure
 int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sharedKey, size_t &sharedKeyLength)
 {
-
     // Create a new context for deriving ECDH secret
     EVP_PKEY_CTX *deriveCtx = EVP_PKEY_CTX_new(hostKey, NULL);
     if (!deriveCtx)
@@ -244,7 +243,6 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sha
     EVP_PKEY_CTX_free(deriveCtx);
 
     return 1;
-    return 0; // Success
 }
 
 // concatinate (g^b,g^a)
@@ -257,6 +255,6 @@ void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLengt
     concatenatedKeys = (unsigned char *)malloc(concatenatedkeysLength);
 
     // Concatenate the serialized keys
-    std::memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
-    std::memcpy(concatenatedKeys + serializedServerKeyLength, serializedClientKey, serializedClientKeyLength);
+    memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
+    memcpy(concatenatedKeys + serializedServerKeyLength, serializedClientKey, serializedClientKeyLength);
 }
