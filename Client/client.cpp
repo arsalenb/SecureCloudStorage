@@ -6,6 +6,7 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <limits>
 #include "../Diffie-Hellman.h"
 #include "../Util.h"
 #include "../crypto.h"
@@ -143,12 +144,12 @@ int main()
     }
 
     // Get username from user
-    std::string userName;
+    std::string username;
     std::cout << "Enter your username (up to 5 characters): ";
-    std::cin >> userName;
+    std::cin >> username;
 
     // Enforce the maximum username length
-    if (userName.size() > MAX_USERNAME_LENGTH)
+    if (username.size() > MAX_USERNAME_LENGTH)
     {
         std::cerr << "Error: Username is too long. Maximum length is 5 characters." << std::endl;
         // Handle the error, return, or take appropriate action
@@ -156,7 +157,7 @@ int main()
     }
 
     // Send username to server
-    send(clientSocket, userName.c_str(), userName.size(), 0);
+    send(clientSocket, username.c_str(), username.size(), 0);
 
     // Receive result from server
     int responseSize = 1;
@@ -274,9 +275,11 @@ int main()
                 unsigned char *iv = nullptr;
 
                 // Call the deserialize function
-                bool result = deserializeLoginMessageFromTheServer(receiveBuffer,
-                                                                   sServerEphemeralKey, sServerEphemeralKeyLength,
-                                                                   cipher_text, iv);
+                if (!deserializeLoginMessageFromTheServer(receiveBuffer, sServerEphemeralKey, sServerEphemeralKeyLength, cipher_text, iv))
+                {
+                    std::cerr << "Error deseiralizing the message" << std::endl;
+                    return 0;
+                }
                 if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
                 {
                     std::cerr << "Key size exceeds the max size" << std::endl;
@@ -352,12 +355,42 @@ int main()
                     return 0;
                 }
                 // read user private key
-                // EVP_PKEY *prvkey = nullptr;
-                // if (!loadPrivateKey("server_private_key.pem", prvkey))
-                // {
-                //     return;
-                // }
+                std::string privateKeyPath = "users/" + username + "/key.pem";
+                EVP_PKEY *prvkey = nullptr;
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                if (!loadPrivateKey(privateKeyPath, prvkey))
+                {
+                    return 0;
+                }
 
+                // create the digiatl signature <(g^a,g^b)>c using the client private key c
+                unsigned char *signature;
+                unsigned int signatureLength;
+                if (!generateDigitalSignature(concatenatedKeys, concatenatedkeysLength, prvkey, signature, signatureLength))
+                {
+                    return 0;
+                }
+                EVP_PKEY_free(prvkey);
+
+                // encrypt  {<(g^a,g^b)>c}k  using the session key
+                cipher_text = nullptr;
+                int cipher_size;
+                iv = nullptr;
+
+                if (!encryptTextAES(signature, signatureLength, sessionKey, cipher_text, cipher_size, iv))
+                {
+                    return 0;
+                }
+                //  send to the server: {<(g^a,g^b)>c}k, IV
+                unsigned char *sendBuffer = nullptr;
+                if (!serializeLoginMessageFromTheClient(cipher_text, iv, sendBuffer))
+                {
+                    return 0;
+                }
+                int sendBufferSize = Encrypted_Signature_Size + CBC_IV_Length;
+                send(clientSocket, sendBuffer, sendBufferSize, 0);
+
+                free(cipher_text);
                 // Cleanup OpenSSL (if not done already)
                 EVP_cleanup();
 

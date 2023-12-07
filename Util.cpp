@@ -11,6 +11,7 @@
 #include <openssl/err.h>
 #include "Diffie-Hellman.h"
 #include "../Util.h"
+#include <limits>
 
 using namespace std;
 
@@ -19,7 +20,7 @@ size_t calLengthLoginMessageFromTheServer()
     return Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size + CBC_IV_Length;
 }
 
-bool receiveEphemralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsigned char *&serializedKey, size_t &serializedKeyLength)
+bool receiveEphemeralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, unsigned char *&serializedKey, size_t &serializedKeyLength)
 {
 
     // Receive the certificate size
@@ -224,6 +225,40 @@ bool deserializeLoginMessageFromTheServer(unsigned char *receivedBuffer,
     return true;
 }
 
+bool serializeLoginMessageFromTheClient(unsigned char *cipher_text, unsigned char *iv, unsigned char *&sendBuffer)
+{
+    // Calculate the total length of the data to be sent
+    size_t totalLength = Encrypted_Signature_Size + CBC_IV_Length;
+
+    // Allocate a buffer to hold the concatenated data
+    sendBuffer = (unsigned char *)(malloc(totalLength));
+
+    // Copy cipher_text to the buffer
+    std::memcpy(sendBuffer, cipher_text, Encrypted_Signature_Size);
+
+    // Copy iv to the buffer
+    std::memcpy(sendBuffer + Encrypted_Signature_Size, iv, CBC_IV_Length);
+
+    return true;
+}
+
+bool deserializeLoginMessageFromTheClient(const unsigned char *receivedBuffer,
+                                          unsigned char *&cipher_text, unsigned char *&iv)
+{
+
+    // Allocate memory for deserialized data
+    cipher_text = (unsigned char *)(malloc(Encrypted_Signature_Size));
+    iv = (unsigned char *)(malloc(CBC_IV_Length));
+
+    // Copy cipher_text from the buffer
+    std::memcpy(cipher_text, receivedBuffer, Encrypted_Signature_Size);
+
+    // Copy iv from the buffer
+    std::memcpy(iv, receivedBuffer + Encrypted_Signature_Size, CBC_IV_Length);
+
+    return true;
+}
+
 bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
 {
     FILE *prvkey_file = fopen(privateKeyPath.c_str(), "r");
@@ -240,6 +275,28 @@ bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
     if (!privateKey)
     {
         std::cerr << "Error: PEM_read_PrivateKey returned NULL\n";
+        return false;
+    }
+
+    return true;
+}
+
+bool loadPublicKey(const std::string publicKeyPath, EVP_PKEY *&publicKey)
+{
+    FILE *file = fopen(publicKeyPath.c_str(), "r");
+    if (!file)
+    {
+        fprintf(stderr, "Error opening file: %s\n", publicKeyPath.c_str());
+        return false;
+    }
+
+    publicKey = PEM_read_PUBKEY(file, nullptr, nullptr, nullptr);
+
+    fclose(file);
+
+    if (!publicKey)
+    {
+        fprintf(stderr, "Error reading public key from PEM file\n");
         return false;
     }
 

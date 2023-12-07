@@ -30,14 +30,14 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         return 0;
     }
 
-    std::string receivedUserName((const char *)buffer);
-    std::cout << "Received username from client: " << receivedUserName << std::endl;
+    std::string receivedUsername((const char *)buffer);
+    std::cout << "Received username from client: " << receivedUsername << std::endl;
 
     // Check if username exists
     bool usernameExists = false;
     for (const auto &user : userNames)
     {
-        if (user == receivedUserName)
+        if (user == receivedUsername)
         {
             usernameExists = true;
             break;
@@ -112,7 +112,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         unsigned char *sClientKey;
         size_t sClientKeyLength;
 
-        if (!receiveEphemralPublicKey(clientSocket, deserializedClientKey, sClientKey, sClientKeyLength))
+        if (!receiveEphemeralPublicKey(clientSocket, deserializedClientKey, sClientKey, sClientKeyLength))
         {
 
             // Handle the case where receiving or deserialization failed
@@ -228,6 +228,47 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         send(clientSocket, sendBuffer, sendBufferSize, 0);
 
         free(cipher_text);
+
+        // receive from the client:  {<(g^a,g^b)>c}k, IV
+
+        size_t receiveBufferSize = Encrypted_Signature_Size + CBC_IV_Length;
+        unsigned char *receiveBuffer = (unsigned char *)malloc(receiveBufferSize);
+        int bytesReceived = recv(clientSocket, receiveBuffer, receiveBufferSize, MSG_WAITALL);
+        if (bytesReceived <= 0)
+        {
+            std::cerr << "Error receiving  data" << std::endl;
+            return;
+        }
+
+        // Variables to store the deserialized components {<(g^a,g^b)>c}k, IV
+        cipher_text = nullptr;
+        iv = nullptr;
+
+        // Call the deserialize function
+        if (!deserializeLoginMessageFromTheClient(receiveBuffer, cipher_text, iv))
+        {
+            std::cerr << "Error deseiralizing the message" << std::endl;
+            return;
+        }
+        // decrypt  {<(g^a,g^b)>c}k  using the session key
+        unsigned char *plaintext = nullptr;
+        int plaintextSize = 0;
+        if (!decryptTextAES(cipher_text, Encrypted_Signature_Size, sessionKey, iv, plaintext, plaintextSize))
+        {
+            return;
+        }
+        // load user public key
+        std::string publicKeyPath = "users/" + receivedUsername + "/public.pem";
+        EVP_PKEY *client_public_key = nullptr;
+        if (!loadPublicKey(publicKeyPath, client_public_key))
+        {
+            return;
+        }
+
+        if (!verifyDigitalSignature(concatenatedKeys, concatenatedkeysLength, plaintext, plaintextSize, client_public_key))
+        {
+            return;
+        }
 
         // free memory
         delete[] sClientKey;
