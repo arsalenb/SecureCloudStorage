@@ -70,11 +70,12 @@ int main()
   // Clean up
   X509_free(certificate);
   BIO_free(bio);
-  unsigned char *buff;
+  vector<unsigned char> buff;
   size_t sharedKeyLen;
   EVP_PKEY *key1, *key2;
   key1 = ECDHKeyGeneration();
   key2 = ECDHKeyGeneration();
-  deriveSharedSecret(key1, key2, buff, sharedKeyLen);
+  serializePubKey(key1, buff);
+  cout << "the serialized key size is : " << buff.size() << endl;
   return 0;
 }

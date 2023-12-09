@@ -97,8 +97,10 @@ EVP_PKEY *ECDHKeyGeneration()
 /// @param sKeyBuffer A reference to the buffer where the serialized key will be stored.
 /// @param sKeyLength A reference to the size_t variable that will store the length of the serialized key.
 /// @return 1 on success, 0 on failure.
-int serializePubKey(EVP_PKEY *public_key, unsigned char *&sKeyBuffer, size_t &sKeyLength)
+int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
 {
+    size_t sKeyLength;
+
     // Allocate an instance of the BIO structure for serialization
     BIO *bio = BIO_new(BIO_s_mem());
 
@@ -116,24 +118,30 @@ int serializePubKey(EVP_PKEY *public_key, unsigned char *&sKeyBuffer, size_t &sK
         return 0;
     }
     // Set of the pointer key_buffer to the buffer of the memory bio and return its size
-    sKeyLength = BIO_get_mem_data(bio, &sKeyBuffer);
+    unsigned char **pointer;
+    sKeyLength = BIO_get_mem_data(bio, pointer); // exit on key length <=
+    // sKeyBuffer.insert(sKeyBuffer.begin(), pointer, pointer + sKeyLength);
 
-    // Allocate memory for the serialized key
-    sKeyBuffer = (unsigned char *)malloc(sKeyLength);
+    std::vector<unsigned char>::iterator it;
 
-    if (!sKeyBuffer)
-    {
-        cerr << "[ECDH] malloc of the buffer for serialized key failed" << endl;
-        return 0;
-    }
+    std::cout << "my vector contains:";
+    for (it = sKeyBuffer.begin(); it < sKeyBuffer.end(); it++)
+        std::cout << ' ' << *it;
+    std::cout << '\n';
 
-    // Read data from bio and extract serialized key
-    int res = BIO_read(bio, sKeyBuffer, sKeyLength);
-    if (res < 1)
-    {
-        cerr << "[ECDH] BIO_read failed" << endl;
-        return 0;
-    }
+    // if (!sKeyBuffer)
+    // {
+    //     cerr << "[ECDH] malloc of the buffer for serialized key failed" << endl;
+    //     return 0;
+    // }
+
+    // // Read data from bio and extract serialized key
+    // int res = BIO_read(bio, sKeyBuffer, sKeyLength);
+    // if (res < 1)
+    // {
+    //     cerr << "[ECDH] BIO_read failed" << endl;
+    //     return 0;
+    // }
 
     // Cleanup
     BIO_free(bio);

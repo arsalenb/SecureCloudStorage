@@ -14,7 +14,7 @@
 #include <openssl/err.h>
 
 EVP_PKEY *ECDHKeyGeneration();
-int serializePubKey(EVP_PKEY *public_key, unsigned char *&sKeyBuffer, size_t &sKeyLength);
+int serializePubKey(EVP_PKEY *public_key, std::vector<unsigned char> &sKeyBuffer);
 EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength);
 int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sharedKey, size_t &sharedKeyLength);
 void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLength,
