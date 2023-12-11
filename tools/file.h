@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <string>
 #include <stdexcept>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -17,7 +18,7 @@ private:
 
 public:
     File(const std::string &filePath);
-    bool File::isValidFileName(const std::string &name);
+    bool isValidFileName(const std::string &name);
     void displayFileInfo() const;
     std::vector<unsigned char> readChunk(std::size_t chunkSize);
     ~File();

@@ -7,6 +7,7 @@
 #include <cstring>
 #include "./security/Diffie-Hellman.h"
 #include "Upload.h"
+#include "./tools/file.h"
 
 using namespace std;
 
@@ -88,5 +89,31 @@ int main()
   UploadM1 des_packet;
   des_packet.deserialize(x);
   des_packet.print();
+
+  try
+  {
+    // Read file path from console
+    std::cout << "Enter file path: ";
+    std::string filePath;
+    std::getline(std::cin, filePath);
+
+    // Create File object
+    File file(filePath);
+
+    // Display file information
+    file.displayFileInfo();
+
+    Buffer x = file.readChunk(5);
+    std::vector<unsigned char>::iterator it;
+
+    std::cout << "file chunk contains:";
+    for (it = x.begin(); it < x.end(); it++)
+      std::cout << ' ' << *it;
+    std::cout << '\n';
+  }
+  catch (const std::exception &e)
+  {
+    std::cerr << "Exception: " << e.what() << std::endl;
+  }
   return 0;
 }

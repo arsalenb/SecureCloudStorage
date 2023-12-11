@@ -1,5 +1,7 @@
 #include "./file.h"
 #include <regex>
+#include <filesystem>
+
 #include <fstream>
 
 File::File(const std::string &filePath)
