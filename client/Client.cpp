@@ -7,9 +7,9 @@
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <limits>
-#include "../Diffie-Hellman.h"
-#include "../Util.h"
-#include "../crypto.h"
+#include "../security/Util.h"
+#include "../security/crypto.h"
+#include "../security/Diffie-Hellman.h"
 #include "Client.h"
 
 using namespace std;

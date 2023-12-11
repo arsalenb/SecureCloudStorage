@@ -5,7 +5,8 @@
 #include <openssl/err.h>
 #include <openssl/evp.h>
 #include <cstring>
-#include "Diffie-Hellman.h"
+#include "./security/Diffie-Hellman.h"
+#include "Upload.h"
 
 using namespace std;
 
@@ -77,5 +78,15 @@ int main()
   key2 = ECDHKeyGeneration();
   serializePubKey(key1, buff);
   cout << "the serialized key size is : " << buff.size() << endl;
+  char *canon_dir = realpath("../README.md", NULL);
+  cout << canon_dir << endl;
+
+  std::vector<unsigned char>::iterator it;
+
+  UploadM1 serialized_packet = UploadM1("9Lp#6Wc2sQxGvYbFjUkEoHdIzPmOaZrXtYhVlKqNmJaBnCdEfGyT", 85963);
+  Buffer x = serialized_packet.serialize();
+  UploadM1 des_packet;
+  des_packet.deserialize(x);
+  des_packet.print();
   return 0;
 }

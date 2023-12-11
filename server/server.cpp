@@ -10,8 +10,8 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <algorithm>
-#include "../Util.h"
-#include "../crypto.h"
+#include "../security/Util.h"
+#include "../security/crypto.h"
 
 using namespace std;
 const int PORT = 8080;
@@ -298,6 +298,8 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
     // Close client socket
     close(clientSocket);
+
+    return 1;
 }
 
 int main()

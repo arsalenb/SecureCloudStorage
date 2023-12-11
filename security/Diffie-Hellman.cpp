@@ -124,7 +124,7 @@ int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
 
     std::vector<unsigned char>::iterator it;
 
-    std::cout << "my vector contains:";
+    std::cout << "Public key buffer contains:";
     for (it = sKeyBuffer.begin(); it < sKeyBuffer.end(); it++)
         std::cout << ' ' << *it;
     std::cout << '\n';

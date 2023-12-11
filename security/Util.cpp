@@ -9,8 +9,8 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include "Diffie-Hellman.h"
-#include "../Util.h"
+#include "./Diffie-Hellman.h"
+#include "./Util.h"
 #include <limits>
 
 using namespace std;

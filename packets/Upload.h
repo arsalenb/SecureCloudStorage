@@ -6,42 +6,61 @@
 #include <cstdint>
 #include <cstring>
 #include <openssl/rand.h>
+#include <requestCodes.h>
+#include <vector>
 
 using namespace std;
+
+typedef vector<unsigned char> Buffer;
 
 // ----------------------------------- UPLOAD M1 ------------------------------------
 
 class UploadM1
 {
 private:
-    uint8_t commandCode;
-    char file_name[maxSizes::filename];
-    uint32_t file_size; // 32 bit unsigned that can represent up to 4GB file sizes
+    uint8_t command_code;
+    char file_name[maxSizes::filename + 1]; // cstyle string to hold file name plus the '\n'
+    uint32_t file_size;                     // 32 bit unsigned that can represent up to 4GB file sizes
 
 public:
-    UploadM1(uint32_t counter, string file_name, size_t file_size);
-    uint8_t *serialize() const;
-    static UploadM1 deserialize(uint8_t *buffer);
+    UploadM1();
+    UploadM1(string file_name, uint32_t file_size);
+    Buffer serialize() const;
+    void deserialize(Buffer buffer);
     static int getSize();
     void print() const;
 };
 
-// ---------------------------------- UPLOAD M3+i -----------------------------------
+// ----------------------------------- UPLOAD ACK ------------------------------------
 
-class UploadMi
+class UploadAck
+{
+private:
+    uint8_t commandCode;
+    char ack_msg[maxSizes::ack_msg + 1]; // 32 bit unsigned that can represent up to 4GB file sizes
+
+public:
+    UploadAck();
+    UploadAck(string ack_msg);
+    Buffer serialize() const;
+    void deserialize(Buffer buffer);
+    static int getSize();
+    void print() const;
+};
+
+// ---------------------------------- UPLOAD M3 -----------------------------------
+
+class UploadM3
 {
 private:
     uint8_t command_code;
-    uint32_t counter;
-    uint8_t *chunk;
-    int chunk_size; // used during serialize, not sent
+    Buffer file_chunk;
 
 public:
-    UploadMi(uint32_t counter, uint8_t *chunk, int chunk_size);
-    ~UploadMi();
-    uint8_t *serialize() const;
-    static UploadMi deserialize(uint8_t *buffer, int chunk_size);
-    static int getSize(int chunk_size);
+    UploadM3(Buffer file_chunk);
+    Buffer serialize() const;
+    void deserialize(Buffer file_chunk);
+    int getSize();
     void print() const;
 };
 
