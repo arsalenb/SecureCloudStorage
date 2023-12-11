@@ -15,10 +15,10 @@
 
 EVP_PKEY *ECDHKeyGeneration();
 int serializePubKey(EVP_PKEY *public_key, std::vector<unsigned char> &sKeyBuffer);
-EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength);
-int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sharedKey, size_t &sharedKeyLength);
-void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLength,
-                     const unsigned char *serializedServerKey, const unsigned char *serializedClientKey,
-                     unsigned char *&concatenatedKeys, int concatenatedkeysLength);
+EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer);
+int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, std::vector<unsigned char> &sharedKey);
+void concatenateKeys(std::vector<unsigned char> &serializedServerKey,
+                     std::vector<unsigned char> &serializedClientKey,
+                     std::vector<unsigned char> &concatenatedKeys);
 
 #endif // MYOPENSSL_H

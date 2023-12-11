@@ -15,12 +15,14 @@ find_package(Threads REQUIRED)
 
 add_executable(${PROJECT_NAME} main.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
 add_executable(Server Server/server.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
-add_executable(Client Client/client.cpp Util.cpp Diffie-Hellman.cpp crypto.cpp)
+add_executable(Client Client/Main.cpp  Util.cpp Diffie-Hellman.cpp crypto.cpp Client/Client.h Client/Client.cpp)
+
 
 target_include_directories(Server PRIVATE data)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC OpenSSL::Crypto OpenSSL::SSL)
 target_link_libraries(Server PUBLIC OpenSSL::Crypto OpenSSL::SSL Threads::Threads)
+
 target_link_libraries(Client PUBLIC OpenSSL::Crypto OpenSSL::SSL Threads::Threads)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})

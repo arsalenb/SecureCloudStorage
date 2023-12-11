@@ -118,9 +118,9 @@ int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
         return 0;
     }
     // Set of the pointer key_buffer to the buffer of the memory bio and return its size
-    unsigned char **pointer;
-    sKeyLength = BIO_get_mem_data(bio, pointer); // exit on key length <=
-    // sKeyBuffer.insert(sKeyBuffer.begin(), pointer, pointer + sKeyLength);
+    unsigned char *pointer;
+    sKeyLength = BIO_get_mem_data(bio, &pointer); // exit on key length <=
+    sKeyBuffer.insert(sKeyBuffer.begin(), pointer, pointer + sKeyLength);
 
     std::vector<unsigned char>::iterator it;
 
@@ -153,7 +153,7 @@ int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
 /// @param sKeyBuffer Pointer to the buffer containing the serialized public key
 /// @param sKeyLength Length of the serialized public key buffer
 /// @return pointer to the deserialized public key (EVP_PKEY*) on success, or nullptr on failure
-EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength)
+EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
 {
     EVP_PKEY *pubKey;
     int ret;
@@ -166,14 +166,20 @@ EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength)
         cerr << "[ECDH] Failed to create BIO" << endl;
         return nullptr;
     }
+    std::vector<unsigned char>::iterator it;
 
     // Write serialized the key from the buffer in bio
-    ret = BIO_write(bio, sKeyBuffer, sKeyLength);
+    std::cout << "my vector contains:";
+    for (it = sKeyBuffer.begin(); it < sKeyBuffer.end(); it++)
+        std::cout << ' ' << *it;
+    std::cout << '\n';
+    ret = BIO_write(bio, sKeyBuffer.data(), sKeyBuffer.size());
     if (ret <= 0)
     {
         cerr << "[ECDH] BIO_write failed" << endl;
         return nullptr;
     }
+
     // Reads a key written in PEM format from the bio and deserialize it
     pubKey = PEM_read_bio_PUBKEY(bio, nullptr, nullptr, nullptr);
     if (!pubKey)
@@ -192,8 +198,10 @@ EVP_PKEY *deserializePublicKey(unsigned char *sKeyBuffer, size_t sKeyLength)
 /// @param sharedKey  a pointer that will hold the derived shared secret
 /// @param sharedKeyLength Reference to a size_t variable that will hold the length of the derived shared secret
 /// @return 1 on success, 0 on failure
-int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sharedKey, size_t &sharedKeyLength)
+int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, vector<unsigned char> &sharedKey)
 {
+
+    size_t sharedKeyLength; // Variable to store the shared key length
     // Create a new context for deriving ECDH secret
     EVP_PKEY_CTX *deriveCtx = EVP_PKEY_CTX_new(hostKey, NULL);
     if (!deriveCtx)
@@ -226,27 +234,20 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sha
         return 0;
     }
 
-    // create the buffer
-    sharedKey = (unsigned char *)(malloc(sharedKeyLength));
-    if (!sharedKey)
-    {
-        cerr << "[ECDH] allocating memory for shared secret failed" << endl;
-        EVP_PKEY_CTX_free(deriveCtx);
-        return 0;
-    }
-
+    sharedKey.resize(sharedKeyLength);
     // Perform the derivation of secret and store it in buffer
-    if (1 != EVP_PKEY_derive(deriveCtx, sharedKey, &sharedKeyLength))
+    if (1 != EVP_PKEY_derive(deriveCtx, sharedKey.data(), &sharedKeyLength))
     {
         cerr << "[ECDH] shared secret derivation failed" << endl;
-        free(sharedKey);
         EVP_PKEY_CTX_free(deriveCtx);
         return 0;
     }
-    for (int i = 0; i < sharedKeyLength; i++)
-    {
-        printf("%02X", sharedKey[i]);
-    }
+    std::vector<unsigned char>::iterator it;
+
+    std::cout << "shared secret:";
+    for (it = sharedKey.begin(); it < sharedKey.end(); it++)
+        printf("%02X", *it);
+    std::cout << '\n';
 
     EVP_PKEY_CTX_free(deriveCtx);
 
@@ -254,15 +255,12 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, unsigned char *&sha
 }
 
 // concatinate (g^b,g^a)
-void concatenateKeys(int serializedServerKeyLength, int serializedClientKeyLength,
-                     const unsigned char *serializedServerKey, const unsigned char *serializedClientKey,
-                     unsigned char *&concatenatedKeys, int concatenatedkeysLength)
+void concatenateKeys(std::vector<unsigned char> &serializedServerKey,
+                     std::vector<unsigned char> &serializedClientKey,
+                     std::vector<unsigned char> &concatenatedKeys)
 {
 
-    // Allocate memory for the concatenated keys
-    concatenatedKeys = (unsigned char *)malloc(concatenatedkeysLength);
-
-    // Concatenate the serialized keys
-    memcpy(concatenatedKeys, serializedServerKey, serializedServerKeyLength);
-    memcpy(concatenatedKeys + serializedServerKeyLength, serializedClientKey, serializedClientKeyLength);
+    // Copy the serialized keys into the concatenatedKeys vector using insert
+    concatenatedKeys.insert(concatenatedKeys.begin(), serializedServerKey.begin(), serializedServerKey.end());
+    concatenatedKeys.insert(concatenatedKeys.end(), serializedClientKey.begin(), serializedClientKey.end());
 }

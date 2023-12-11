@@ -12,20 +12,27 @@
 #include <cstring>
 using namespace std;
 
-bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *sessionKey, unsigned char *&cphr_buf, int &cphr_size, unsigned char *&iv)
+bool encryptTextAES(vector<unsigned char> &clear_buf, vector<unsigned char> sessionKey, vector<unsigned char> &cphr_buf, vector<unsigned char> &iv)
 {
     const EVP_CIPHER *cipher = EVP_aes_128_cbc();
     int iv_len = EVP_CIPHER_iv_length(cipher);
     int block_size = EVP_CIPHER_block_size(cipher);
+    size_t clear_size = clear_buf.size();
+
+    int cphr_size;
 
     int key_len = EVP_CIPHER_key_length(cipher);
-    unsigned char *key = (unsigned char *)malloc(key_len);
-    memcpy(key, sessionKey, key_len);
+    vector<unsigned char> key = sessionKey;
 
     // Allocate memory for and randomly generate IV:
-    iv = (unsigned char *)malloc(iv_len);
+    // Allocate memory for and randomly generate IV:
+    iv.resize(iv_len);
     RAND_poll();
-    RAND_bytes((unsigned char *)&iv[0], iv_len);
+    if (RAND_bytes(iv.data(), iv_len) != 1)
+    {
+        cerr << "Error: RAND_bytes failed for IV\n";
+        return false;
+    }
 
     if (clear_size > INT_MAX - block_size)
     {
@@ -35,12 +42,7 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
 
     // allocate a buffer for the ciphertext:
     int enc_buffer_size = clear_size + block_size;
-    cphr_buf = (unsigned char *)malloc(enc_buffer_size);
-    if (!cphr_buf)
-    {
-        cerr << "Error: malloc returned NULL (file too big?)\n";
-        return false;
-    }
+    cphr_buf.resize(enc_buffer_size);
 
     // Create and initialise the context with the used cipher, key, and iv
     EVP_CIPHER_CTX *ctx;
@@ -51,7 +53,7 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
         return false;
     }
 
-    int ret = EVP_EncryptInit(ctx, cipher, key, iv);
+    int ret = EVP_EncryptInit(ctx, cipher, key.data(), iv.data());
     if (ret != 1)
     {
         cerr << "Error: EncryptInit Failed\n";
@@ -62,7 +64,7 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
     int total_len = 0;  // total encrypted bytes
 
     // Encrypt Update: one call is enough because  the data is small.
-    ret = EVP_EncryptUpdate(ctx, cphr_buf, &update_len, clear_buf, clear_size);
+    ret = EVP_EncryptUpdate(ctx, cphr_buf.data(), &update_len, clear_buf.data(), clear_size);
     if (ret != 1)
     {
         cerr << "Error: EncryptUpdate Failed\n";
@@ -71,7 +73,7 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
     total_len += update_len;
 
     // Encrypt Final. Finalize the encryption and add padding
-    ret = EVP_EncryptFinal(ctx, cphr_buf + total_len, &update_len);
+    ret = EVP_EncryptFinal(ctx, cphr_buf.data() + total_len, &update_len);
     if (ret != 1)
     {
         cerr << "Error: EncryptFinal Failed\n";
@@ -87,17 +89,17 @@ bool encryptTextAES(unsigned char *clear_buf, int clear_size, unsigned char *ses
     return true;
 }
 
-bool decryptTextAES(unsigned char *cphr_buf, int cphr_size, unsigned char *sessionKey, unsigned char *iv, unsigned char *&clear_buf, int &clear_size)
+bool decryptTextAES(vector<unsigned char> &cphr_buf, vector<unsigned char> &sessionKey, vector<unsigned char> &iv, vector<unsigned char> &clear_buf)
 {
     const EVP_CIPHER *cipher = EVP_aes_128_cbc();
     int block_size = EVP_CIPHER_block_size(cipher);
+    int cphr_size = cphr_buf.size();
 
-    int key_len = EVP_CIPHER_key_length(cipher);
-    unsigned char *key = (unsigned char *)malloc(key_len);
-    memcpy(key, sessionKey, key_len);
+    vector<unsigned char> key = sessionKey;
 
     // Allocate memory for the decrypted text
-    clear_buf = (unsigned char *)malloc(cphr_size + block_size); // Maximum size
+
+    clear_buf.resize(cphr_size); // Maximum size
 
     // Create and initialise the context with the used cipher, key, and iv
     EVP_CIPHER_CTX *ctx;
@@ -108,7 +110,7 @@ bool decryptTextAES(unsigned char *cphr_buf, int cphr_size, unsigned char *sessi
         return false;
     }
 
-    int ret = EVP_DecryptInit(ctx, cipher, key, iv);
+    int ret = EVP_DecryptInit(ctx, cipher, key.data(), iv.data());
     if (ret != 1)
     {
         cerr << "Error: DecryptInit Failed\n";
@@ -119,7 +121,7 @@ bool decryptTextAES(unsigned char *cphr_buf, int cphr_size, unsigned char *sessi
     int total_len = 0;  // total decrypted bytes
 
     // Decrypt Update: one call is enough because the data is small.
-    ret = EVP_DecryptUpdate(ctx, clear_buf, &update_len, cphr_buf, cphr_size);
+    ret = EVP_DecryptUpdate(ctx, clear_buf.data(), &update_len, cphr_buf.data(), cphr_size);
     if (ret != 1)
     {
         cerr << "Error: DecryptUpdate Failed\n";
@@ -128,18 +130,35 @@ bool decryptTextAES(unsigned char *cphr_buf, int cphr_size, unsigned char *sessi
     total_len += update_len;
 
     // Decrypt Final. Finalize the decryption and remove padding
-    ret = EVP_DecryptFinal(ctx, clear_buf + total_len, &update_len);
+    ret = EVP_DecryptFinal(ctx, clear_buf.data() + total_len, &update_len);
     if (ret != 1)
     {
         cerr << "Error: DecryptFinal Failed\n";
         return false;
     }
     total_len += update_len;
-
-    clear_size = total_len;
-
+    vector<unsigned char> cut_clear_buff;
+    cut_clear_buff.insert(cut_clear_buff.begin(), clear_buf.begin(), clear_buf.begin() + total_len);
+    clear_buf = cut_clear_buff;
     // Delete the context and the key from memory
     EVP_CIPHER_CTX_free(ctx);
+
+    return true;
+}
+
+bool generateSessionKey(vector<unsigned char> &digest, vector<unsigned char> &sessionKey)
+{
+    const EVP_CIPHER *cipher = EVP_aes_128_cbc();
+
+    int sessionKeyLength = EVP_CIPHER_key_length(cipher);
+
+    sessionKey.resize(sessionKeyLength);
+    std::copy(digest.begin(), digest.begin() + sessionKeyLength, sessionKey.begin());
+
+    printf("Session key is:\n");
+    for (unsigned int n = 0; n < sessionKeyLength; n++)
+        printf("%02x", sessionKey[n]);
+    printf("\n");
 
     return true;
 }

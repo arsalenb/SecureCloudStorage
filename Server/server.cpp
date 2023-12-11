@@ -9,6 +9,7 @@
 #include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <algorithm>
 #include "../Util.h"
 #include "../crypto.h"
 
@@ -20,32 +21,38 @@ const int MAX_USERNAME_LENGTH = 5;
 // Function to handle each connected client
 int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 {
-    unsigned char buffer[MAX_USERNAME_LENGTH + 1] = {0}; // +1 for null terminator
-    ssize_t bytesRead = recv(clientSocket, buffer, MAX_USERNAME_LENGTH, MSG_WAITALL);
+    vector<unsigned char> buffer(MAX_USERNAME_LENGTH);
 
-    if (bytesRead <= 0)
+    if (!receiveData(clientSocket, buffer, MAX_USERNAME_LENGTH))
     {
-        std::cerr << "Error receiving username from client" << std::endl;
+        cerr << "Error receiving username from client" << endl;
         close(clientSocket);
-        return 0;
+        return false;
     }
 
-    std::string receivedUsername((const char *)buffer);
+    std::string receivedUsername(buffer.begin(), buffer.end());
     std::cout << "Received username from client: " << receivedUsername << std::endl;
 
     // Check if username exists
     bool usernameExists = false;
+
     for (const auto &user : userNames)
     {
-        if (user == receivedUsername)
+        if (receivedUsername == user)
         {
             usernameExists = true;
             break;
         }
     }
     // Send result back to client
-    std::string resultMsg = (usernameExists) ? "1" : "0";
-    send(clientSocket, resultMsg.c_str(), resultMsg.size(), 0);
+    unsigned char resultChar = (usernameExists) ? '1' : '0';
+    vector<unsigned char> resultMsg;
+    resultMsg.push_back(resultChar);
+
+    if (!sendData(clientSocket, resultMsg))
+    {
+        return false;
+    }
 
     if (usernameExists)
     {
@@ -92,33 +99,44 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
 
-        // trucate to the size of the certificate
-        unsigned char certBuffer[BUFFER_SIZE] = {0};
-        int certSize = BIO_read(bio, certBuffer, sizeof(certBuffer));
-        if (certSize <= 0)
+        // Determine the size of the certificate
+        int certSize = BIO_pending(bio);
+
+        // Resize the vector to fit the certificate
+        vector<unsigned char> certBuffer(certSize);
+        int readBytes = BIO_read(bio, certBuffer.data(), certSize);
+        if (readBytes <= 0)
             return 0;
         BIO_free(bio);
 
         std::cout << "size of certificate " << certSize << std::endl;
 
         // Send the certificate size to the client
-        send(clientSocket, &certSize, sizeof(certSize), 0);
+        if (!sendNumber(clientSocket, certSize))
+        {
+            std::cerr << "Error sending the certificate size" << std::endl;
+            return false;
+        }
 
         // Send the certificate data to the client
-        send(clientSocket, certBuffer, certSize, 0);
+        if (!sendData(clientSocket, certBuffer))
+        {
+            return 0;
+        }
 
         // receive the client ECDH public key
         EVP_PKEY *deserializedClientKey;
-        unsigned char *sClientKey;
+        std::vector<unsigned char> sClientKey;
         size_t sClientKeyLength;
 
-        if (!receiveEphemeralPublicKey(clientSocket, deserializedClientKey, sClientKey, sClientKeyLength))
+        if (!receiveEphemeralPublicKey(clientSocket, deserializedClientKey, sClientKey))
         {
 
             // Handle the case where receiving or deserialization failed
             std::cerr << "Failed to receive or deserialize the key" << std::endl;
             return 0;
         }
+        sClientKeyLength = sClientKey.size();
 
         // Generate the elliptic curve diffie-Hellman keys for the client
         EVP_PKEY *ECDH_Keys;
@@ -130,60 +148,55 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         // serialize the public key
 
-        unsigned char *sServerKey;
-        size_t sServerKeyLength;
+        std::vector<unsigned char> sServerKey;
 
-        if (!serializePubKey(ECDH_Keys, sServerKey, sServerKeyLength))
+        if (!serializePubKey(ECDH_Keys, sServerKey))
         {
             cerr << "[SERVER] Serialization of public key failed" << endl;
             return 0;
         }
+        size_t sServerKeyLength = sServerKey.size();
 
         // calculate (g^a)^b
-        unsigned char *sharedSecretKey;
+        std::vector<unsigned char> sharedSecretKey;
         size_t sharedSecretLength;
-        int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedClientKey, sharedSecretKey, sharedSecretLength);
+        int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedClientKey, sharedSecretKey);
 
         if (derivationResult == -1)
         {
             return 0;
         }
+        sharedSecretLength = sharedSecretKey.size();
         // generate session key Sha256((g^a)^b)
-        unsigned char *digest;
+        std::vector<unsigned char> digest;
         unsigned int digestlen;
 
-        if (!computeSHA256Digest(sharedSecretKey, sharedSecretLength, digest, digestlen))
+        if (!computeSHA256Digest(sharedSecretKey, digest))
         {
             cerr << "[SERVER] Shared secret derivation failed" << endl;
             return 0;
         }
+        digestlen = digest.size();
+
         // take first 128 of the the digest
-        const EVP_CIPHER *cipher = EVP_aes_128_cbc();
-
-        int sessionKeyLength = EVP_CIPHER_key_length(cipher);
-        unsigned char *sessionKey = (unsigned char *)malloc(sessionKeyLength);
-        memcpy(sessionKey, digest, sessionKeyLength);
-
-        printf("Session key is:\n");
-        for (unsigned int n = 0; n < sessionKeyLength; n++)
-            printf("%02x", (sessionKey)[n]);
-        printf("\n");
-// Free the shared secret buffer!
-#pragma optimize("", off)
-        memset(digest, 0, digestlen);
-        memset(sharedSecretKey, 0, sharedSecretLength);
-#pragma optimize("", on)
-        free(digest);
-        free(sharedSecretKey);
+        std::vector<unsigned char> sessionKey;
+        if (!generateSessionKey(digest, sessionKey))
+        {
+            return 0;
+        }
 
         // concatinate (g^b,g^a)
         // Concatenate the serialized keys
-        unsigned char *concatenatedKeys = nullptr;
+        vector<unsigned char> concatenatedKeys;
         int concatenatedkeysLength = sServerKeyLength + sClientKeyLength;
-        concatenateKeys(sServerKeyLength, sClientKeyLength,
-                        sServerKey, sClientKey, concatenatedKeys, concatenatedkeysLength);
+        concatenateKeys(sServerKey, sClientKey, concatenatedKeys);
 
-        printf("concatennated keys :\n%s\n", concatenatedKeys);
+        printf("Concatenated keys:\n");
+        for (const auto &ch : concatenatedKeys)
+        {
+            printf("%02x", ch); // Assuming you want to print hexadecimal values
+        }
+        printf("\n");
         // Now concatenatedKeys contains the serialized form of both keys
 
         // read server private key
@@ -195,54 +208,58 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         }
 
         // create the digiatl signature <(g^a,g^b)>s using the server private key
-        unsigned char *signature;
-        unsigned int signatureLength;
-        if (!generateDigitalSignature(concatenatedKeys, concatenatedkeysLength, prvkey, signature, signatureLength))
+        std::vector<unsigned char> signature;
+
+        if (!generateDigitalSignature(concatenatedKeys, prvkey, signature))
         {
             return 0;
         }
+        unsigned int signatureLength = signature.size();
         EVP_PKEY_free(prvkey);
         // Signature generation successful, print the signature
-        cout << "Digital Signature:" << endl;
-        BIO_dump_fp(stdout, (const char *)signature, signatureLength);
+        std::cout << "Digital Signature:" << endl;
+        BIO_dump_fp(stdout, reinterpret_cast<const char *>(signature.data()), signatureLength);
 
         // encrypt  {<(g^a,g^b)>s}k  using the session key
-        unsigned char *cipher_text;
+        std::vector<unsigned char> cipher_text;
         int cipher_size;
-        unsigned char *iv;
+        std::vector<unsigned char> iv;
 
-        if (!encryptTextAES(signature, signatureLength, sessionKey, cipher_text, cipher_size, iv))
+        if (!encryptTextAES(signature, sessionKey, cipher_text, iv))
         {
             return 0;
         }
+        cipher_size = cipher_text.size();
 
         // send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
 
-        unsigned char *sendBuffer = nullptr;
-        if (!serializeLoginMessageFromTheServer(sServerKey, sServerKeyLength,
-                                                cipher_text, iv, sendBuffer))
+        vector<unsigned char> sendBuffer;
+        if (!serializeLoginMessageFromTheServer(sServerKey, cipher_text, iv, sendBuffer))
         {
             return 0;
         }
-        int sendBufferSize = calLengthLoginMessageFromTheServer();
-        send(clientSocket, sendBuffer, sendBufferSize, 0);
 
-        free(cipher_text);
+        if (!sendData(clientSocket, sendBuffer))
+        {
+            return 0;
+        }
 
         // receive from the client:  {<(g^a,g^b)>c}k, IV
 
         size_t receiveBufferSize = Encrypted_Signature_Size + CBC_IV_Length;
-        unsigned char *receiveBuffer = (unsigned char *)malloc(receiveBufferSize);
-        int bytesReceived = recv(clientSocket, receiveBuffer, receiveBufferSize, MSG_WAITALL);
-        if (bytesReceived <= 0)
+
+        vector<unsigned char> receiveBuffer;
+        receiveBuffer.resize(receiveBufferSize);
+
+        if (!receiveData(clientSocket, receiveBuffer, receiveBufferSize))
         {
             std::cerr << "Error receiving  data" << std::endl;
-            return 0;
+            return false;
         }
 
         // Variables to store the deserialized components {<(g^a,g^b)>c}k, IV
-        cipher_text = nullptr;
-        iv = nullptr;
+        cipher_text.clear();
+        iv.clear();
 
         // Call the deserialize function
         if (!deserializeLoginMessageFromTheClient(receiveBuffer, cipher_text, iv))
@@ -251,12 +268,13 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
         // decrypt  {<(g^a,g^b)>c}k  using the session key
-        unsigned char *plaintext = nullptr;
+        vector<unsigned char> plaintext;
         int plaintextSize = 0;
-        if (!decryptTextAES(cipher_text, Encrypted_Signature_Size, sessionKey, iv, plaintext, plaintextSize))
+        if (!decryptTextAES(cipher_text, sessionKey, iv, plaintext))
         {
             return 0;
         }
+        plaintextSize = plaintext.size();
         // load user public key
         std::string publicKeyPath = "users/" + receivedUsername + "/public.pem";
         EVP_PKEY *client_public_key = nullptr;
@@ -265,15 +283,10 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
 
-        if (!verifyDigitalSignature(concatenatedKeys, concatenatedkeysLength, plaintext, plaintextSize, client_public_key))
+        if (!verifyDigitalSignature(concatenatedKeys, plaintext, client_public_key))
         {
             return 0;
         }
-
-        // free memory
-        delete[] sClientKey;
-        delete[] sServerKey;
-        delete[] concatenatedKeys;
         // Clean up
         X509_free(serverCert);
         EVP_PKEY_free(deserializedClientKey);
@@ -321,7 +334,7 @@ int main()
     std::cout << "Server listening on port " << PORT << "..." << std::endl;
 
     // List of usernames
-    std::vector<std::string> userNames = {"user1", "user2", "user3"};
+    vector<std::string> userNames = {"user1", "user2", "user3"};
 
     while (true)
     {
