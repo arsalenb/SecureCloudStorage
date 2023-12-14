@@ -12,6 +12,7 @@
 #include "./Diffie-Hellman.h"
 #include "./Util.h"
 #include <limits>
+#include <openssl/rand.h>
 
 using namespace std;
 
@@ -354,4 +355,12 @@ bool sendNumber(int socket, size_t number)
     }
 
     return true;
+}
+void clear_vec(vector<unsigned char> &v)
+{
+    if (!v.empty())
+    {
+        v.assign(v.size(), '0');
+        v.clear();
+    }
 }

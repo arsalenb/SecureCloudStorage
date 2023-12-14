@@ -8,6 +8,7 @@
 #include "./security/Diffie-Hellman.h"
 #include "Upload.h"
 #include "./tools/file.h"
+#include "crypto.h"
 
 using namespace std;
 
@@ -82,38 +83,42 @@ int main()
   char *canon_dir = realpath("../README.md", NULL);
   cout << canon_dir << endl;
 
+  string message_to_encrypt = "Hello Arsalen!";
+  string secretKey = "7gHtR4eL9oPqW2sX";
+  string aad_body = "this message is going on the clear";
+  // -----
+  vector<unsigned char> clear_buff(message_to_encrypt.begin(), message_to_encrypt.end());
+  vector<unsigned char> cipher_buffer;
+  vector<unsigned char> tag;
+  vector<unsigned char> iv;
+  vector<unsigned char> key(secretKey.begin(), secretKey.end());
+  vector<unsigned char> aad(aad_body.begin(), aad_body.end());
+
+  // encrypt into cipher_buffer
+  encrypt_aes_ccm(clear_buff, cipher_buffer, key, iv, aad, tag);
+
+  // priting results
   std::vector<unsigned char>::iterator it;
 
-  UploadM1 serialized_packet = UploadM1("9Lp#6Wc2sQxGvYbFjUkEoHdIzPmOaZrXtYhVlKqNmJaBnCdEfGyT", 85963);
-  Buffer x = serialized_packet.serialize();
-  UploadM1 des_packet;
-  des_packet.deserialize(x);
-  des_packet.print();
+  std::cout << "cipher buff  is :";
+  for (it = cipher_buffer.begin(); it < cipher_buffer.end(); it++)
+    printf("%02X", *it);
+  std::cout << '\n';
 
-  try
-  {
-    // Read file path from console
-    std::cout << "Enter file path: ";
-    std::string filePath;
-    std::getline(std::cin, filePath);
+  std::cout << "tag is :";
+  for (it = tag.begin(); it < tag.end(); it++)
+    printf("%02X", *it);
+  std::cout << '\n';
 
-    // Create File object
-    File file(filePath);
+  // decrypt into decrypted_buff
+  vector<unsigned char> decrypted_buff;
+  decrypt_aes_ccm(cipher_buffer, decrypted_buff, key, iv, aad, tag);
 
-    // Display file information
-    file.displayFileInfo();
+  // print results
+  std::cout << "Decrypted and authenticated message is: ";
+  for (it = decrypted_buff.begin(); it < decrypted_buff.end(); it++)
+    printf("%c", *it);
+  std::cout << '\n';
 
-    Buffer x = file.readChunk(5);
-    std::vector<unsigned char>::iterator it;
-
-    std::cout << "file chunk contains:";
-    for (it = x.begin(); it < x.end(); it++)
-      std::cout << ' ' << *it;
-    std::cout << '\n';
-  }
-  catch (const std::exception &e)
-  {
-    std::cerr << "Exception: " << e.what() << std::endl;
-  }
   return 0;
 }

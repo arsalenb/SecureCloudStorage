@@ -10,7 +10,7 @@ UploadM1::UploadM1(string file_name, uint32_t file_size)
 
     this->command_code = RequestCodes::UPLOAD_REQ;
     this->file_size = file_size;
-    strncpy(this->file_name, file_name.c_str(), maxSizes::filename + 1);
+    strncpy(this->file_name, file_name.c_str(), MAX::file_name + 1);
 }
 
 Buffer UploadM1::serialize() const
@@ -23,7 +23,7 @@ Buffer UploadM1::serialize() const
 
     // insert the file string which has a size of max of file name (50) +1
     unsigned char const *file_name_pointer = reinterpret_cast<unsigned char const *>(&file_name);
-    buff.insert(buff.end(), file_name_pointer, file_name_pointer + ((maxSizes::filename + 1) * sizeof(char)));
+    buff.insert(buff.end(), file_name_pointer, file_name_pointer + ((MAX::file_name + 1) * sizeof(char)));
 
     // change host to network byte order of file_size
     no_file_size = htonl(file_size);
@@ -44,8 +44,8 @@ void UploadM1::deserialize(Buffer input)
     memcpy(&this->command_code, input.data(), sizeof(uint8_t));
     position += sizeof(uint8_t);
 
-    memcpy(&this->file_name, input.data() + position, (maxSizes::filename + 1) * sizeof(char));
-    position += (maxSizes::filename + 1) * sizeof(char);
+    memcpy(&this->file_name, input.data() + position, (MAX::file_name + 1) * sizeof(char));
+    position += (MAX::file_name + 1) * sizeof(char);
 
     uint32_t network_filesize = 0;
 
@@ -60,7 +60,7 @@ int UploadM1::getSize()
 
     size += sizeof(uint8_t);
     size += sizeof(uint32_t);
-    size += (maxSizes::filename + 1) * sizeof(char);
+    size += (MAX::file_name + 1) * sizeof(char);
     size += sizeof(uint32_t);
 
     return size;
@@ -81,7 +81,7 @@ UploadAck::UploadAck(string ack_msg)
 {
 
     this->commandCode = RequestCodes::UPLOAD_REQ;
-    strncpy(this->ack_msg, ack_msg.c_str(), maxSizes::ack_msg + 1);
+    strncpy(this->ack_msg, ack_msg.c_str(), MAX::ack_msg + 1);
 }
 
 Buffer UploadAck::serialize() const
@@ -91,7 +91,7 @@ Buffer UploadAck::serialize() const
     buff.insert(buff.begin(), commandCode);
 
     unsigned char const *ack_msg_pointer = reinterpret_cast<unsigned char const *>(&ack_msg);
-    buff.insert(buff.end(), ack_msg_pointer, ack_msg_pointer + ((maxSizes::ack_msg + 1) * sizeof(char)));
+    buff.insert(buff.end(), ack_msg_pointer, ack_msg_pointer + ((MAX::ack_msg + 1) * sizeof(char)));
 
     return buff;
 }
@@ -104,14 +104,14 @@ void UploadAck::deserialize(Buffer input)
     memcpy(&this->commandCode, input.data(), sizeof(uint8_t));
     position += sizeof(uint8_t);
 
-    memcpy(&this->ack_msg, input.data() + position, (maxSizes::ack_msg + 1) * sizeof(char));
+    memcpy(&this->ack_msg, input.data() + position, (MAX::ack_msg + 1) * sizeof(char));
 }
 
 int UploadAck::getSize()
 {
 
     int size = 0;
-    size += (maxSizes::ack_msg + 1) * sizeof(char);
+    size += (MAX::ack_msg + 1) * sizeof(char);
 
     return size;
 }

@@ -19,7 +19,7 @@ class UploadM1
 {
 private:
     uint8_t command_code;
-    char file_name[maxSizes::filename + 1]; // cstyle string to hold file name plus the '\n'
+    char file_name[MAX::file_name + 1]; // cstyle string to hold file name plus the '\n'
     uint32_t file_size;                     // 32 bit unsigned that can represent up to 4GB file sizes
 
 public:
@@ -37,7 +37,7 @@ class UploadAck
 {
 private:
     uint8_t commandCode;
-    char ack_msg[maxSizes::ack_msg + 1]; // 32 bit unsigned that can represent up to 4GB file sizes
+    char ack_msg[MAX::ack_msg + 1]; // 32 bit unsigned that can represent up to 4GB file sizes
 
 public:
     UploadAck();

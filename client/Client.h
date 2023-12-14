@@ -1,4 +1,3 @@
-// client.h
 #ifndef CLIENT_H
 #define CLIENT_H
 
@@ -7,18 +6,21 @@
 #include <cstdint>
 #include <cstring>
 #include <openssl/rand.h>
+#include <vector>
 
 const int PORT = 8080;
 const int MAX_CERTIFICATE_SIZE = 4096;
 const int MAX_USERNAME_LENGTH = 5;
 
+typedef std::vector<unsigned char> Buffer;
+
 class Client
 {
 private:
-    int clientSocket;
     std::string username;
-
-    // Add other private members as needed
+    int clientSocket;
+    int send_counter = 0;
+    int rcv_counter = 0;
 
 public:
     Client();
@@ -32,11 +34,12 @@ public:
     bool receiveServerCertificate(X509 *&serverCert);
 
     bool verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCert);
+
     void performClientJob();
 
-    // Add other public member functions as needed
+    int upload_file();
 
     ~Client();
 };
 
-#endif // CLIENT_H
+#endif

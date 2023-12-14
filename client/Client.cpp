@@ -10,12 +10,12 @@
 #include "../security/Util.h"
 #include "../security/crypto.h"
 #include "../security/Diffie-Hellman.h"
+#include <../packets/requestCodes.h>
 #include "Client.h"
+#include "../tools/file.h"
 
 using namespace std;
-Client::Client()
-{
-}
+Client::Client() {}
 
 bool Client::connectToServer()
 {
@@ -449,6 +449,56 @@ void Client::performClientJob()
     }
 
     // end login phase
+}
+
+int Client::upload_file()
+{
+    bool file_valid = false;
+    File file;
+
+    cout << "****************************************" << endl;
+    cout << "*********     UPLOAD FILE      *********" << endl;
+    cout << "****************************************" << endl;
+
+    // Read file path from console
+    std::cout << "Enter file path:" << endl;
+    std::string filePath;
+    std::getline(std::cin, filePath);
+
+    if (!cin || filePath.empty())
+    {
+        cerr << "[UPLOAD] Invalid file path input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+
+    try
+    {
+        file.read(filePath);
+        file.displayFileInfo();
+        file_valid = true; // break out of loop
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "[UPLOAD] " << e.what() << std::endl;
+        return 0;
+    }
+
+    if (file.getFileSize() >= MAX::max_file_size)
+    {
+        cerr << "[UPLOAD] File is too large!" << endl;
+        return 0;
+    }
+    std::vector<unsigned char> IV;
+    generateRandomValue(IV, 16);
+    std::vector<unsigned char>::iterator it;
+
+    std::cout << "shared secret:" << endl;
+
+    for (it = IV.begin(); it < IV.end(); it++)
+        printf("%02X", *it);
+    std::cout << '\n';
+    return 1;
 }
 
 Client::~Client()

@@ -242,8 +242,8 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, vector<unsigned cha
         EVP_PKEY_CTX_free(deriveCtx);
         return 0;
     }
-    std::vector<unsigned char>::iterator it;
 
+    std::vector<unsigned char>::iterator it;
     std::cout << "shared secret:";
     for (it = sharedKey.begin(); it < sharedKey.end(); it++)
         printf("%02X", *it);

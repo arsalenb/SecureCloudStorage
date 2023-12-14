@@ -3,7 +3,8 @@
 int main()
 {
     Client client;
-    client.performClientJob();
+    client.upload_file();
+    // client.performClientJob();
 
     return 0;
 }

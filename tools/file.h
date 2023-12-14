@@ -17,10 +17,12 @@ private:
     std::ifstream file_stream;
 
 public:
-    File(const std::string &filePath);
+    File();
+    void read(const std::string &filePath);
     bool isValidFileName(const std::string &name);
     void displayFileInfo() const;
     std::vector<unsigned char> readChunk(std::size_t chunkSize);
+    uintmax_t getFileSize() { return file_size; }
     ~File();
 };
 
