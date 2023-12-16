@@ -49,8 +49,7 @@ Buffer Wrapper::serialize()
     }
 
     // create wrapper packet: IV | Counter | CT | TAG
-    packet.insert(packet.end(), iv.begin(), iv.end()); // Add IV
-    // Assuming 'counter' is of integer type
+    packet.insert(packet.begin(), iv.begin(), iv.end()); // Add IV
     packet.insert(packet.end(), reinterpret_cast<const uint8_t *>(&counter), reinterpret_cast<const uint8_t *>(&counter) + sizeof(counter));
     packet.insert(packet.end(), ct.begin(), ct.end());   // Add CT
     packet.insert(packet.end(), tag.begin(), tag.end()); // Add TAG
@@ -68,6 +67,7 @@ int Wrapper::deserialize(Buffer wrapper)
     size_t position = 0;
 
     // extract IV from wrapper packet
+    iv.resize(crypto2::IV_LENGTH * sizeof(unsigned char));
     memcpy(iv.data(), wrapper.data(), crypto2::IV_LENGTH * sizeof(unsigned char));
     position += crypto2::IV_LENGTH * sizeof(unsigned char);
 
@@ -104,6 +104,9 @@ Buffer Wrapper::createAAD(int counter, Buffer iv)
     Buffer aad;
     int n_counter;
 
+    // insert IV in aad
+    aad.insert(aad.begin(), iv.begin(), iv.end());
+
     // change host to network byte order of counter
     n_counter = htonl(counter);
 
@@ -111,33 +114,30 @@ Buffer Wrapper::createAAD(int counter, Buffer iv)
     unsigned char const *counter_begin = reinterpret_cast<unsigned char const *>(&n_counter);
 
     // insert counter into the buffer which is on int
-    aad.insert(aad.begin(), counter_begin, counter_begin + sizeof(int));
-
-    // insert IV in aad
-    aad.insert(aad.end(), iv.begin(), iv.end());
+    aad.insert(aad.end(), counter_begin, counter_begin + sizeof(int));
 
     return aad;
 }
 
-size_t Wrapper::getSize()
+size_t Wrapper::getSize(size_t pt_size)
 {
-
     size_t size = 0;
 
     size += crypto2::IV_LENGTH * sizeof(unsigned char);
     size += sizeof(int);
-    size += ct.empty() ? pt.size() : ct.size();
+    size += pt_size * sizeof(unsigned char); // Cipher text size is equal to plaintext size since we are in AES_CCM (CTR streaming mode)
     size += crypto2::TAG_LENGTH * sizeof(unsigned char);
 
     return size;
 }
 
-void Wrapper::print()
+void Wrapper::print() const
 {
     cout << "---------- WRAPPER PACKET ---------" << endl;
     cout << "COUNTER: " << counter << endl;
     cout << "SESSION KEY: ";
     for (Buffer::const_iterator it = session_key.begin(); it < session_key.end(); ++it)
         printf("%02X", *it);
+    cout << "PLAIN/CIPHER SIZE: " << pt.size() << endl;
     cout << "------------------------------" << endl;
 }

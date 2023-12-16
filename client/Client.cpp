@@ -506,9 +506,9 @@ int Client::upload_file()
     UploadM1 m1(file.get_file_name(), file.getFileSize());
 
     m1.print(); // debug
-
+    Buffer serializedPacket = m1.serialize();
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
+    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
 
     m1_wrapper.print(); // debug
 

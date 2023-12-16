@@ -26,9 +26,9 @@ public:
     Wrapper(Buffer session_key, int counter, Buffer payload);
     Buffer serialize();
     int deserialize(Buffer wrapper);
-    size_t getSize();
+    static size_t getSize(size_t pt_size);
     Buffer getPayload() { return pt; }
-    void print();
+    void print() const;
 };
 
 #endif // _WRAPPER_H

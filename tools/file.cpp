@@ -36,10 +36,6 @@ void File::read(const std::string &filePath)
     }
 }
 
-File::~File()
-{
-    file_stream.close();
-}
 bool File::isValidFileName(const std::string &name)
 {
     // Use a regex pattern for valid file names
@@ -70,4 +66,9 @@ std::vector<unsigned char> File::readChunk(std::size_t chunkSize)
     }
 
     return buffer;
+}
+
+File::~File()
+{
+    file_stream.close();
 }

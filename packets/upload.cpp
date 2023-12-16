@@ -15,15 +15,20 @@ UploadM1::UploadM1(string file_name, uint32_t file_size)
 
 Buffer UploadM1::serialize() const
 {
-    Buffer buff;
+    Buffer buff(MAX::initial_request_length);
     uint32_t no_file_size; // network order file size
 
+    size_t position = 0;
+
     // insert the command code unint8_t (one byte) interepreted as unsigned char
-    buff.insert(buff.begin(), command_code);
+    memcpy(buff.data(), &command_code, sizeof(uint8_t));
+
+    position += sizeof(uint8_t);
 
     // insert the file string which has a size of max of file name (50) +1
     unsigned char const *file_name_pointer = reinterpret_cast<unsigned char const *>(&file_name);
-    buff.insert(buff.end(), file_name_pointer, file_name_pointer + ((MAX::file_name + 1) * sizeof(char)));
+    memcpy(buff.data() + position, file_name_pointer, ((MAX::file_name + 1) * sizeof(char)));
+    position += (MAX::file_name + 1) * sizeof(char);
 
     // change host to network byte order of file_size
     no_file_size = htonl(file_size);
@@ -32,7 +37,7 @@ Buffer UploadM1::serialize() const
     unsigned char const *file_size_begin = reinterpret_cast<unsigned char const *>(&no_file_size);
 
     // insert file size into the vector which is on uint32_t
-    buff.insert(buff.end(), file_size_begin, file_size_begin + sizeof(uint32_t));
+    memcpy(buff.data() + position, file_size_begin, sizeof(uint32_t));
 
     return buff;
 }
@@ -59,7 +64,6 @@ int UploadM1::getSize()
     int size = 0;
 
     size += sizeof(uint8_t);
-    size += sizeof(uint32_t);
     size += (MAX::file_name + 1) * sizeof(char);
     size += sizeof(uint32_t);
 
@@ -111,6 +115,8 @@ int UploadAck::getSize()
 {
 
     int size = 0;
+
+    size += sizeof(uint8_t);
     size += (MAX::ack_msg + 1) * sizeof(char);
 
     return size;
@@ -152,13 +158,12 @@ void UploadM3::deserialize(Buffer input)
     memcpy(&this->file_chunk, input.data() + position, input.size() - sizeof(uint8_t));
 }
 
-int UploadM3::getSize()
+size_t UploadM3::getSize(size_t chunk_size)
 {
     int size = 0;
 
     size += sizeof(uint8_t);
-    size += sizeof(uint32_t);
-    size += file_chunk.size();
+    size += chunk_size * sizeof(unsigned char);
 
     return size;
 }

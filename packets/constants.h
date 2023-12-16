@@ -23,6 +23,7 @@ namespace MAX
     const size_t path = 4096;                                         // linux os imposed max absolute path length
     const size_t ack_msg = 50 + 1;                                    // extra char for str terminator
     const size_t counter_max_value = std::numeric_limits<int>::max(); // number of requests before shutting down the session
+    const size_t initial_request_length = 520;                        // size of the initial request size to be expected
 }
 
 #endif // _REQUEST_CODES_H

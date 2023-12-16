@@ -291,26 +291,42 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
 
-        // receive M1 UPLOAD message
-        UploadM1 m1;
-        receiveBufferSize = m1.getSize();
+        // receive Wrapper packet message
+        Buffer message_buff(Wrapper::getSize(MAX::initial_request_length));
 
-        receiveBuffer.resize(receiveBufferSize);
-
-        if (!receiveData(clientSocket, receiveBuffer, receiveBufferSize)) // I don't the size of the received packet here ??
+        if (!receiveData(clientSocket, message_buff, Wrapper::getSize(MAX::initial_request_length)))
         {
             std::cerr << "Error receiving  data" << std::endl;
             return false;
         }
-        // deserialize m1 general packet
-        Wrapper m1_wrapper(sessionKey);
+        // deserialize to extract payload in plaintext
+        Wrapper wrapped_packet(sessionKey);
 
-        if (m1_wrapper.deserialize(receiveBuffer) != 1)
+        if (!wrapped_packet.deserialize(message_buff))
         {
-            std::cerr << "error during data receival happend";
+            std::cerr << "[SERVER] Wrapper packet wasn't deserialized correctly!" << endl;
+            return false;
         }
 
-        // retrieve payload and deserialize it
+        // extract command code from payload
+        uint8_t command_code;
+        Buffer payload = wrapped_packet.getPayload();
+        memcpy(&command_code, payload.data(), sizeof(uint8_t));
+
+        cout << "Command Code: " << command_code << endl;
+
+        if (RequestCodes::UPLOAD_REQ == command_code)
+        {
+            // ------ HERE WE START THE UPLOAD ROUTINE -----
+            // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
+
+            // deserialize m1 general packet
+            UploadM1 m1;
+            m1.deserialize(payload);
+            m1.print();
+
+            // retrieve payload and deserialize it
+        }
 
         // Clean up
         X509_free(serverCert);

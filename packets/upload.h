@@ -60,7 +60,7 @@ public:
     UploadM3(Buffer file_chunk);
     Buffer serialize() const;
     void deserialize(Buffer file_chunk);
-    int getSize();
+    static size_t getSize(size_t chunk_size);
     void print() const;
 };
 
