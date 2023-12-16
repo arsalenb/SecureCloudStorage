@@ -6,7 +6,7 @@
 #include <openssl/evp.h>
 #include <cstring>
 #include "./security/Diffie-Hellman.h"
-#include "Upload.h"
+#include "upload.h"
 #include "./tools/file.h"
 #include "crypto.h"
 

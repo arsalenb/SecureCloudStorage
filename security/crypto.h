@@ -15,7 +15,7 @@ typedef std::vector<unsigned char> Buffer;
 bool encryptTextAES(Buffer &clear_buf, Buffer sessionKey, Buffer &cphr_buf, Buffer &iv);
 bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &clear_buf);
 bool generateSessionKey(Buffer &digest, Buffer &sessionKey);
-bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buffer &iv, Buffer aad, Buffer &tag);
+bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buffer iv, Buffer aad, Buffer &tag);
 bool decrypt_aes_ccm(Buffer cphr_buf, Buffer &clear_buf, Buffer sessionKey, Buffer iv, Buffer aad, Buffer tag);
 bool generateSessionKey(Buffer &digest, Buffer &sessionKey);
 int generateRandomValue(Buffer &value, int length);

@@ -19,6 +19,7 @@ class Client
 private:
     std::string username;
     int clientSocket;
+    Buffer session_key;
     int send_counter = 0;
     int rcv_counter = 0;
 
@@ -26,18 +27,13 @@ public:
     Client();
 
     bool connectToServer();
-
     bool sendUsername();
-
     bool receiveServerResponse();
-
     bool receiveServerCertificate(X509 *&serverCert);
-
     bool verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCert);
-
     void performClientJob();
-
     int upload_file();
+    void incrementCounter();
 
     ~Client();
 };

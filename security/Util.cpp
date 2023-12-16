@@ -356,6 +356,7 @@ bool sendNumber(int socket, size_t number)
 
     return true;
 }
+
 void clear_vec(vector<unsigned char> &v)
 {
     if (!v.empty())

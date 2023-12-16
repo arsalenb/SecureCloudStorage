@@ -41,4 +41,6 @@ bool receiveData(int socket, std::vector<unsigned char> &buffer, size_t bufferSi
 bool receiveNumber(int socket, size_t &number);
 bool sendNumber(int socket, size_t number);
 int generateRandomValue(std::vector<unsigned char> &value, int length);
+void clear_vec(vector<unsigned char> &v);
+
 #endif

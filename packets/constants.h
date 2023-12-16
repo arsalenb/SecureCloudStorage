@@ -1,8 +1,9 @@
-#ifndef _REQUEST_CODES_H
-#define _REQUEST_CODES_H
+#ifndef _CONSTANTS_H
+#define _CONSTANTS_H
 
 #include <cstddef>
 #include <limits>
+#include <openssl/evp.h>
 
 namespace RequestCodes
 {

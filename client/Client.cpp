@@ -10,9 +10,12 @@
 #include "../security/Util.h"
 #include "../security/crypto.h"
 #include "../security/Diffie-Hellman.h"
-#include <../packets/requestCodes.h>
+#include <../packets/constants.h>
 #include "Client.h"
+
 #include "../tools/file.h"
+#include "../packets/upload.h"
+#include "../packets/wrapper.h"
 
 using namespace std;
 Client::Client() {}
@@ -239,8 +242,7 @@ bool Client::receiveServerResponse()
         digestlen = digest.size();
 
         // take first 128 of the the digest
-        vector<unsigned char> sessionKey;
-        if (!generateSessionKey(digest, sessionKey))
+        if (!generateSessionKey(digest, session_key))
         {
             return 0;
         }
@@ -264,7 +266,7 @@ bool Client::receiveServerResponse()
         // decrypt  {<(g^a,g^b)>s}k  using the session key
         vector<unsigned char> plaintext;
         int plaintextSize = 0;
-        if (!decryptTextAES(cipher_text, sessionKey, iv, plaintext))
+        if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
         {
             return 0;
         }
@@ -301,7 +303,7 @@ bool Client::receiveServerResponse()
         int cipher_size;
         iv.clear();
 
-        if (!encryptTextAES(signature, sessionKey, cipher_text, iv))
+        if (!encryptTextAES(signature, session_key, cipher_text, iv))
         {
             return 0;
         }
@@ -449,6 +451,7 @@ void Client::performClientJob()
     }
 
     // end login phase
+    upload_file();
 }
 
 int Client::upload_file()
@@ -465,13 +468,14 @@ int Client::upload_file()
     std::string filePath;
     std::getline(std::cin, filePath);
 
+    // make sure input was valid and non null
     if (!cin || filePath.empty())
     {
         cerr << "[UPLOAD] Invalid file path input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
     }
-
+    // open the file denoted in path
     try
     {
         file.read(filePath);
@@ -484,21 +488,58 @@ int Client::upload_file()
         return 0;
     }
 
+    // check if file is not empty
+    if (file.getFileSize() == 0)
+    {
+        cerr << "[UPLOAD] Cannot upload empty files!" << endl;
+        return 0;
+    }
+
+    // check if file size doesn't exceed 4GB
     if (file.getFileSize() >= MAX::max_file_size)
     {
         cerr << "[UPLOAD] File is too large!" << endl;
         return 0;
     }
-    std::vector<unsigned char> IV;
-    generateRandomValue(IV, 16);
-    std::vector<unsigned char>::iterator it;
 
-    std::cout << "shared secret:" << endl;
+    // Create Upload M1 type packet
+    UploadM1 m1(file.get_file_name(), file.getFileSize());
 
-    for (it = IV.begin(); it < IV.end(); it++)
-        printf("%02X", *it);
-    std::cout << '\n';
+    m1.print(); // debug
+
+    // Create on the M1 message the wrapper packet to be sent
+    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
+
+    m1_wrapper.print(); // debug
+
+    // serialize M1 Wrapper packet
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+    {
+        return false;
+    }
+    clear_vec(serialized_packet);
+
+    // increment counter
+    incrementCounter();
+
+    // std::cout << "shared secret:" << endl;
+    // for (it = IV.begin(); it < IV.end(); it++)
+    //     printf("%02X", *it);
+    // std::cout << '\n';
+
     return 1;
+}
+
+void Client::incrementCounter()
+{
+    if (send_counter == MAX::counter_max_value)
+        performClientJob(); // reinitiate session
+    else
+
+        send_counter++;
 }
 
 Client::~Client()

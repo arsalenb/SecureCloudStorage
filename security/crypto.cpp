@@ -12,15 +12,20 @@
 #include <cstring>
 #include <crypto.h>
 #include <openssl/err.h>
+#include <constants.h>
 
 using namespace std;
 typedef vector<unsigned char> Buffer;
 
-const EVP_CIPHER *cipher = EVP_aes_128_ccm();
-const int IV_LENGTH = EVP_CIPHER_iv_length(cipher);
-const int TAG_LENGTH = 14; // self-chosen to be on 14 bytes (valid sizes are: 4, 6, 10, 12, 14 and 16 bytes)
-const int BLOCK_SIZE = EVP_CIPHER_block_size(cipher);
-const int KEY_LEN = EVP_CIPHER_key_length(cipher);
+namespace crypto
+{
+    const EVP_CIPHER *cipher = EVP_aes_128_ccm();
+    const int IV_LENGTH = EVP_CIPHER_iv_length(cipher);
+    const int TAG_LENGTH = 14; // self-chosen to be on 14 bytes (valid sizes are: 4, 6, 10, 12, 14 and 16 bytes)
+    const int BLOCK_SIZE = EVP_CIPHER_block_size(cipher);
+    const int KEY_LEN = EVP_CIPHER_key_length(cipher);
+
+}
 
 bool encryptTextAES(Buffer &clear_buf, Buffer sessionKey, Buffer &cphr_buf, Buffer &iv)
 {
@@ -34,7 +39,6 @@ bool encryptTextAES(Buffer &clear_buf, Buffer sessionKey, Buffer &cphr_buf, Buff
     int key_len = EVP_CIPHER_key_length(cipher);
     Buffer key = sessionKey;
 
-    // Allocate memory for and randomly generate IV:
     // Allocate memory for and randomly generate IV:
     iv.resize(iv_len);
     RAND_poll();
@@ -173,18 +177,11 @@ bool generateSessionKey(Buffer &digest, Buffer &sessionKey)
     return true;
 };
 
-bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buffer &iv, Buffer aad, Buffer &tag)
+bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buffer iv, Buffer aad, Buffer &tag)
 {
     size_t clear_size = clear_buf.size();
 
-    // Allocate buffer size and randomly generate IV:
-    if (!generateRandomValue(iv, IV_LENGTH))
-    {
-        cerr << " [AES_CCM_ENCRYPT] Error occured in sgenerating IV\n";
-        return 0;
-    }
-
-    if (clear_size > INT_MAX - BLOCK_SIZE)
+    if (clear_size > INT_MAX - crypto::BLOCK_SIZE)
     {
         cerr << "[AES_CCM_ENCRYPT] integer overflow\n";
         return 0;
@@ -209,7 +206,7 @@ bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buff
     }
 
     // Initialize the context with the algorithm
-    if (EVP_EncryptInit(ctx, cipher, 0, 0) != 1)
+    if (EVP_EncryptInit(ctx, crypto::cipher, 0, 0) != 1)
     {
         EVP_CIPHER_CTX_free(ctx);
         cerr << "[AES_CCM_ENCRYPT] Context initialization Failed\n";
@@ -217,8 +214,8 @@ bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buff
     }
 
     // Set iv and tag sizes
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, IV_LENGTH, 0);
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, TAG_LENGTH, 0);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, crypto::IV_LENGTH, 0);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, crypto::TAG_LENGTH, 0);
 
     // Set the key and the iv
     if (EVP_EncryptInit(ctx, 0, sessionKey.data(), iv.data()) != 1)
@@ -262,8 +259,8 @@ bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buff
         return 0;
     }
     // Extract the tag(MAC)
-    tag.resize(TAG_LENGTH);
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, TAG_LENGTH, tag.data()) != 1)
+    tag.resize(crypto::TAG_LENGTH);
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_GET_TAG, crypto::TAG_LENGTH, tag.data()) != 1)
     {
         EVP_CIPHER_CTX_free(ctx);
         cerr << "[AES_CCM_ENCRYPT] Tag extraction Failed \n";
@@ -275,6 +272,7 @@ bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buff
 
     return 1;
 }
+
 bool decrypt_aes_ccm(Buffer cphr_buf, Buffer &clear_buf, Buffer sessionKey, Buffer iv, Buffer aad, Buffer tag)
 {
     int cphr_size = cphr_buf.size();
@@ -298,17 +296,17 @@ bool decrypt_aes_ccm(Buffer cphr_buf, Buffer &clear_buf, Buffer sessionKey, Buff
         return 0;
     }
     // Set algorithm to context
-    if (EVP_DecryptInit(ctx, cipher, 0, 0) != 1)
+    if (EVP_DecryptInit(ctx, crypto::cipher, 0, 0) != 1)
     {
         EVP_CIPHER_CTX_free(ctx);
         cerr << "[AES_CCM_AES_CCM_DECRYPT] Context initialization Failed\n";
         return 0;
     }
     // Set the iv  size
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, IV_LENGTH, 0);
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_IVLEN, crypto::IV_LENGTH, 0);
 
     // Set the tag associated with encrypted data
-    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, TAG_LENGTH, tag.data());
+    EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_CCM_SET_TAG, crypto::TAG_LENGTH, tag.data());
 
     // Set the key and the iv
     if (EVP_DecryptInit(ctx, 0, sessionKey.data(), iv.data()) != 1)
@@ -366,6 +364,7 @@ bool decrypt_aes_ccm(Buffer cphr_buf, Buffer &clear_buf, Buffer sessionKey, Buff
 
     return 1;
 }
+
 int generateRandomValue(Buffer &value, int length)
 {
     value.resize(length);

@@ -10,8 +10,11 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <algorithm>
+
 #include "../security/Util.h"
 #include "../security/crypto.h"
+#include "../packets/upload.h"
+#include "../packets/wrapper.h"
 
 using namespace std;
 const int PORT = 8080;
@@ -287,6 +290,28 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         {
             return 0;
         }
+
+        // receive M1 UPLOAD message
+        UploadM1 m1;
+        receiveBufferSize = m1.getSize();
+
+        receiveBuffer.resize(receiveBufferSize);
+
+        if (!receiveData(clientSocket, receiveBuffer, receiveBufferSize)) // I don't the size of the received packet here ??
+        {
+            std::cerr << "Error receiving  data" << std::endl;
+            return false;
+        }
+        // deserialize m1 general packet
+        Wrapper m1_wrapper(sessionKey);
+
+        if (m1_wrapper.deserialize(receiveBuffer) != 1)
+        {
+            std::cerr << "error during data receival happend";
+        }
+
+        // retrieve payload and deserialize it
+
         // Clean up
         X509_free(serverCert);
         EVP_PKEY_free(deserializedClientKey);

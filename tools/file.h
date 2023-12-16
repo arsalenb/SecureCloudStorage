@@ -23,6 +23,7 @@ public:
     void displayFileInfo() const;
     std::vector<unsigned char> readChunk(std::size_t chunkSize);
     uintmax_t getFileSize() { return file_size; }
+    std::string get_file_name() { return file_name; }
     ~File();
 };
 
