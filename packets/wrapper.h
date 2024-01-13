@@ -28,6 +28,7 @@ public:
     int deserialize(Buffer wrapper);
     static size_t getSize(size_t pt_size);
     Buffer getPayload() { return pt; }
+    int getCounter() { return counter; }
     void print() const;
 };
 

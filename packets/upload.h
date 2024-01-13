@@ -19,10 +19,11 @@ class UploadM1
 {
 private:
     uint8_t command_code;
-    char file_name[MAX::file_name + 1]; // cstyle string to hold file name plus the '\n'
-    uint32_t file_size;                 // 32 bit unsigned that can represent up to 4GB file sizes
+    uint32_t file_size; // 32 bit unsigned that can represent up to 4GB file sizes
 
 public:
+    char file_name[MAX::file_name + 1]; // cstyle string to hold file name plus the '\n'
+
     UploadM1();
     UploadM1(string file_name, uint32_t file_size);
     Buffer serialize() const;
@@ -36,15 +37,16 @@ public:
 class UploadAck
 {
 private:
-    uint8_t commandCode;
-    char ack_msg[MAX::ack_msg + 1]; // 32 bit unsigned that can represent up to 4GB file sizes
+    uint8_t command_code;
+    uint8_t ack_code;
 
 public:
     UploadAck();
-    UploadAck(string ack_msg);
+    UploadAck(uint8_t ack_code);
     Buffer serialize() const;
     void deserialize(Buffer buffer);
     static int getSize();
+    uint8_t getAckCode() { return ack_code; };
     void print() const;
 };
 

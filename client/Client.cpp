@@ -437,6 +437,8 @@ bool Client::verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCe
 
 void Client::performClientJob()
 {
+    int rcv_counter = 0;
+
     if (!connectToServer())
     {
         return;
@@ -505,30 +507,51 @@ int Client::upload_file()
     // Create Upload M1 type packet
     UploadM1 m1(file.get_file_name(), file.getFileSize());
 
-    m1.print(); // debug
+    m1.print();
     Buffer serializedPacket = m1.serialize();
+
     // Create on the M1 message the wrapper packet to be sent
     Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-
     m1_wrapper.print(); // debug
 
-    // serialize M1 Wrapper packet
     Buffer serialized_packet = m1_wrapper.serialize();
 
-    // send wrapped packet to server
+    // Send wrapped packet to server
     if (!sendData(clientSocket, serialized_packet))
+        return false;
+
+    clear_vec(serialized_packet);
+    incrementCounter(); // increment send counter
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(UploadAck::getSize());
+    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
     {
+        std::cerr << "Error receiving  data" << std::endl;
         return false;
     }
-    clear_vec(serialized_packet);
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
 
-    // increment counter
-    incrementCounter();
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
 
-    // std::cout << "shared secret:" << endl;
-    // for (it = IV.begin(); it < IV.end(); it++)
-    //     printf("%02X", *it);
-    // std::cout << '\n';
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    UploadAck ack;
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (!ack.getAckCode())
+    {
+        std::cerr << "[CLIENT] Acknowlodgement returned with error!" << endl;
+        return 0;
+    }
 
     return 1;
 }

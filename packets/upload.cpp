@@ -81,43 +81,43 @@ void UploadM1::print() const
 // ----------------------------------- UPLOAD ACK ------------------------------------
 
 UploadAck::UploadAck() {}
-UploadAck::UploadAck(string ack_msg)
+UploadAck::UploadAck(uint8_t ack_code)
 {
-
-    this->commandCode = RequestCodes::UPLOAD_REQ;
-    strncpy(this->ack_msg, ack_msg.c_str(), MAX::ack_msg + 1);
+    this->command_code = RequestCodes::UPLOAD_REQ;
+    this->ack_code = ack_code;
 }
 
 Buffer UploadAck::serialize() const
 {
-    Buffer buff;
+    Buffer buff(UploadAck::getSize());
+    size_t position = 0;
 
-    buff.insert(buff.begin(), commandCode);
+    memcpy(buff.data(), &command_code, sizeof(uint8_t));
+    position += sizeof(uint8_t);
 
-    unsigned char const *ack_msg_pointer = reinterpret_cast<unsigned char const *>(&ack_msg);
-    buff.insert(buff.end(), ack_msg_pointer, ack_msg_pointer + ((MAX::ack_msg + 1) * sizeof(char)));
+    memcpy(buff.data() + position, &ack_code, sizeof(uint8_t));
+    position += sizeof(uint8_t);
 
     return buff;
 }
 
 void UploadAck::deserialize(Buffer input)
 {
-    UploadAck UploadM2;
     size_t position = 0;
 
-    memcpy(&this->commandCode, input.data(), sizeof(uint8_t));
+    memcpy(&this->command_code, input.data(), sizeof(uint8_t));
     position += sizeof(uint8_t);
 
-    memcpy(&this->ack_msg, input.data() + position, (MAX::ack_msg + 1) * sizeof(char));
+    memcpy(&this->ack_code, input.data() + position, sizeof(uint8_t));
+    position += sizeof(uint8_t);
 }
 
 int UploadAck::getSize()
 {
-
     int size = 0;
 
     size += sizeof(uint8_t);
-    size += (MAX::ack_msg + 1) * sizeof(char);
+    size += sizeof(uint8_t);
 
     return size;
 }
@@ -125,7 +125,7 @@ int UploadAck::getSize()
 void UploadAck::print() const
 {
     cout << "---------- UPLOAD M2 ---------" << endl;
-    cout << "Acknowledge message: " << ack_msg << endl;
+    cout << "Acknowledge Code: " << ack_code << endl;
     cout << "------------------------------" << endl;
 }
 

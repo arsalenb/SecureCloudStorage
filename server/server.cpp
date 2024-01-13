@@ -15,6 +15,7 @@
 #include "../security/crypto.h"
 #include "../packets/upload.h"
 #include "../packets/wrapper.h"
+#include "../tools/file.h"
 
 using namespace std;
 const int PORT = 8080;
@@ -24,6 +25,9 @@ const int MAX_USERNAME_LENGTH = 5;
 // Function to handle each connected client
 int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 {
+    int send_counter = 0;
+    int rcv_counter = 0;
+
     vector<unsigned char> buffer(MAX_USERNAME_LENGTH);
 
     if (!receiveData(clientSocket, buffer, MAX_USERNAME_LENGTH))
@@ -182,8 +186,8 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         digestlen = digest.size();
 
         // take first 128 of the the digest
-        std::vector<unsigned char> sessionKey;
-        if (!generateSessionKey(digest, sessionKey))
+        std::vector<unsigned char> session_key;
+        if (!generateSessionKey(digest, session_key))
         {
             return 0;
         }
@@ -228,7 +232,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         int cipher_size;
         std::vector<unsigned char> iv;
 
-        if (!encryptTextAES(signature, sessionKey, cipher_text, iv))
+        if (!encryptTextAES(signature, session_key, cipher_text, iv))
         {
             return 0;
         }
@@ -273,7 +277,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         // decrypt  {<(g^a,g^b)>c}k  using the session key
         vector<unsigned char> plaintext;
         int plaintextSize = 0;
-        if (!decryptTextAES(cipher_text, sessionKey, iv, plaintext))
+        if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
         {
             return 0;
         }
@@ -300,7 +304,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return false;
         }
         // deserialize to extract payload in plaintext
-        Wrapper wrapped_packet(sessionKey);
+        Wrapper wrapped_packet(session_key);
 
         if (!wrapped_packet.deserialize(message_buff))
         {
@@ -308,9 +312,10 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return false;
         }
 
-        // extract command code from payload
+        // Extract command code from payload
         uint8_t command_code;
         Buffer payload = wrapped_packet.getPayload();
+        int packet_counter = wrapped_packet.getCounter();
         memcpy(&command_code, payload.data(), sizeof(uint8_t));
 
         cout << "Command Code: " << command_code << endl;
@@ -320,12 +325,34 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             // ------ HERE WE START THE UPLOAD ROUTINE -----
             // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
 
-            // deserialize m1 general packet
+            // Deserialize m1 general packet
             UploadM1 m1;
             m1.deserialize(payload);
-            m1.print();
+            m1.print(); // for debug
+            Buffer serialized_packet;
 
-            // retrieve payload and deserialize it
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            // Check if the file exists
+            string file_path = "../data/" + receivedUsername + "/" + (string)m1.file_name;
+            UploadAck ack_packet;
+
+            if (File::exists(file_path))
+                ack_packet = UploadAck(0); // in case of success
+            else
+                ack_packet = UploadAck(1); // if file doesn't exist, error code : 1
+
+            Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            sendData(clientSocket, serialized_packet);
+
+            send_counter++;
         }
 
         // Clean up

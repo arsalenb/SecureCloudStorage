@@ -8,14 +8,9 @@ File::File() {}
 void File::read(const std::string &filePath)
 {
     // Validate file path
-    if (!fs::exists(filePath))
+    if (!File::exists(filePath))
     {
         throw std::invalid_argument("File does not exist.");
-    }
-
-    if (!fs::is_regular_file(filePath))
-    {
-        throw std::invalid_argument("Not a regular file.");
     }
 
     // Extract file name and size
@@ -66,6 +61,22 @@ std::vector<unsigned char> File::readChunk(std::size_t chunkSize)
     }
 
     return buffer;
+}
+
+bool File::exists(std::string filePath)
+{
+
+    if (!fs::exists(filePath))
+    {
+        return false;
+    }
+
+    if (!fs::is_regular_file(filePath))
+    {
+        return false;
+    }
+
+    return true;
 }
 
 File::~File()
