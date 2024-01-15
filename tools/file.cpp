@@ -2,6 +2,7 @@
 #include <regex>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 
 File::File() {}
 
@@ -23,9 +24,9 @@ void File::read(const std::string &filePath)
         throw std::invalid_argument("Invalid file name.");
     }
 
-    file_stream.open(file_name, std::ios::binary);
+    input_fs.open(file_name, std::ios::binary);
 
-    if (!file_stream)
+    if (!input_fs)
     {
         throw std::runtime_error("Unable to open file for reading.");
     }
@@ -46,16 +47,16 @@ void File::displayFileInfo() const
 
 std::vector<unsigned char> File::readChunk(std::size_t chunkSize)
 {
-    if (!file_stream)
+    if (!input_fs)
     {
         throw std::runtime_error("File stream not open.");
     }
 
     // Read the specified chunk size from the file
     std::vector<unsigned char> buffer(chunkSize);
-    file_stream.read(reinterpret_cast<char *>(buffer.data()), chunkSize);
+    input_fs.read(reinterpret_cast<char *>(buffer.data()), chunkSize);
 
-    if (!file_stream)
+    if (!input_fs)
     {
         throw std::runtime_error("Unable to read from file.");
     }
@@ -79,7 +80,53 @@ bool File::exists(std::string filePath)
     return true;
 }
 
+void File::create(const std::string &filePath)
+{
+    // Validate file path
+    if (File::exists(filePath))
+    {
+        throw std::invalid_argument("File already exists.");
+    }
+
+    // Sanitize file name using regex e.g.: '!invalid.txt' is not accepted
+    if (!isValidFileName(fs::path(filePath).filename().string()))
+    {
+        throw std::invalid_argument("Invalid file name.");
+    }
+
+    // Create the file with the provided path
+    output_fs.open(filePath, std::ios::binary | std::ios::out);
+
+    if (!output_fs)
+    {
+        throw std::runtime_error("Unable to create file.");
+    }
+
+    // Update the file_name member variable
+    file_name = fs::path(filePath).filename().string();
+}
+
+void File::writeChunk(const std::vector<unsigned char> &chunk)
+{
+    if (!output_fs)
+    {
+        throw std::runtime_error("File stream not open.");
+    }
+
+    // Write the chunk to the file
+    output_fs.write(reinterpret_cast<const char *>(chunk.data()), chunk.size());
+
+    if (!output_fs)
+    {
+        throw std::runtime_error("Unable to write to file.");
+    }
+}
+
 File::~File()
 {
-    file_stream.close();
+    if (input_fs.is_open())
+        input_fs.close();
+
+    if (output_fs.is_open())
+        output_fs.close();
 }

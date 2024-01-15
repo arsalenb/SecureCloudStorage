@@ -524,7 +524,7 @@ int Client::upload_file()
     incrementCounter(); // increment send counter
 
     // -------------- HANDLE ACK PACKET ---------------------
-    Buffer ack_buffer(UploadAck::getSize());
+    Buffer ack_buffer(Wrapper::getSize(UploadAck::getSize()));
     if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
     {
         std::cerr << "Error receiving  data" << std::endl;
@@ -549,7 +549,7 @@ int Client::upload_file()
 
     if (!ack.getAckCode())
     {
-        std::cerr << "[CLIENT] Acknowlodgement returned with error!" << endl;
+        std::cerr << "[CLIENT] File already exists on the cloud!" << endl;
         return 0;
     }
 

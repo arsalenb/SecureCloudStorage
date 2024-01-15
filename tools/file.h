@@ -14,11 +14,14 @@ class File
 private:
     std::string file_name;
     uintmax_t file_size;
-    std::ifstream file_stream;
+    std::ifstream input_fs;
+    std::ofstream output_fs;
 
 public:
     File();
     void read(const std::string &filePath);
+    void writeChunk(const std::vector<unsigned char> &chunk);
+    void create(const std::string &filePath);
     bool isValidFileName(const std::string &name);
     void displayFileInfo() const;
     std::vector<unsigned char> readChunk(std::size_t chunkSize);
