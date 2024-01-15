@@ -11,6 +11,7 @@ namespace RequestCodes
     const size_t UPLOAD_REQ = 1;
     const size_t UPLOAD_CHUNK = 2;
     const size_t DOWNLOAD_REQ = 3;
+    const size_t DOWNLOAD_CHUNK = 4;
 }
 
 namespace MAX

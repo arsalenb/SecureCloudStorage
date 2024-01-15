@@ -10,12 +10,13 @@
 #include "../security/Util.h"
 #include "../security/crypto.h"
 #include "../security/Diffie-Hellman.h"
-#include <../packets/constants.h>
+#include "../packets/constants.h"
 #include "Client.h"
 
 #include "../tools/file.h"
 #include "../packets/upload.h"
 #include "../packets/wrapper.h"
+#include "download.h"
 
 using namespace std;
 Client::Client() {}
@@ -453,7 +454,8 @@ void Client::performClientJob()
     }
 
     // end login phase
-    upload_file();
+    // upload_file();
+    download_file();
 }
 
 int Client::upload_file()
@@ -552,6 +554,58 @@ int Client::upload_file()
         std::cerr << "[CLIENT] File already exists on the cloud!" << endl;
         return 0;
     }
+
+    return 1;
+}
+
+int Client::download_file()
+{
+    bool file_valid = false;
+    File file;
+
+    cout << "****************************************" << endl;
+    cout << "*********     Download File    *********" << endl;
+    cout << "****************************************" << endl;
+
+    // Read file path from console
+    std::cout << "Enter file name:" << endl;
+    std::string filename;
+    std::getline(std::cin, filename);
+
+    // make sure input was valid and non null
+    if (!cin || filename.empty())
+    {
+        cerr << "[Download] Invalid filename input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    }
+    // Create Download M1 type packet
+    DownloadM1 m1(filename);
+
+    m1.print(); // debug
+    Buffer serializedPacket = m1.serialize();
+    // Create on the M1 message the wrapper packet to be sent
+    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
+
+    m1_wrapper.print(); // debug
+
+    // serialize M1 Wrapper packet
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+    {
+        return false;
+    }
+    clear_vec(serialized_packet);
+
+    // increment counter
+    incrementCounter();
+
+    // std::cout << "shared secret:" << endl;
+    // for (it = IV.begin(); it < IV.end(); it++)
+    //     printf("%02X", *it);
+    // std::cout << '\n';
 
     return 1;
 }

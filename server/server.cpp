@@ -16,6 +16,7 @@
 #include "../packets/upload.h"
 #include "../packets/wrapper.h"
 #include "../tools/file.h"
+#include "download.h"
 
 using namespace std;
 const int PORT = 8080;
@@ -353,6 +354,34 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             sendData(clientSocket, serialized_packet);
 
             send_counter++;
+        }
+
+        // download routine
+        if (RequestCodes::DOWNLOAD_REQ == command_code)
+        {
+            // ------ HERE WE START THE UPLOAD ROUTINE -----
+            // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
+
+            // Deserialize m1 general packet
+            DownloadM1 m1;
+            m1.deserialize(payload);
+            m1.print(); // for debug
+            Buffer serialized_packet;
+
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            // Check if the file exists
+            string filename = (string)m1.file_name;
+            string file_path = "../data/" + receivedUsername + "/" + (string)m1.file_name;
+
+            if (File::exists(file_path))
+                cout << "found " << command_code << endl; // in case of success
+            else
+                cout << "not found " << command_code << endl; // if file doesn't exist, error code : 1
         }
 
         // Clean up

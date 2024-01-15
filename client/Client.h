@@ -34,6 +34,7 @@ public:
     void performClientJob();
     int upload_file();
     void incrementCounter();
+    int download_file();
 
     ~Client();
 };
