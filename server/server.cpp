@@ -303,7 +303,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         if (!receiveData(clientSocket, message_buff, Wrapper::getSize(MAX::initial_request_length)))
         {
-            std::cerr << "Error receiving  data" << std::endl;
+            std::cerr << "Error receiving data" << std::endl;
             return false;
         }
         // deserialize to extract payload in plaintext
@@ -311,7 +311,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         if (!wrapped_packet.deserialize(message_buff))
         {
-            std::cerr << "[SERVER] Wrapper packet wasn't deserialized correctly!" << endl;
+            std::cerr << "[GENERAL] Wrapper packet wasn't deserialized correctly!" << endl;
             return false;
         }
 
@@ -345,9 +345,9 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             UploadAck ack_packet;
 
             if (File::exists(file_path))
-                ack_packet = UploadAck(0); // in case of success
+                ack_packet = UploadAck(0);
             else
-                ack_packet = UploadAck(1); // if file doesn't exist, error code : 1
+                ack_packet = UploadAck(1);
 
             Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
             ack_wrapper.print();
@@ -356,9 +356,106 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             sendData(clientSocket, serialized_packet);
 
             send_counter++;
+            // -------------- HANDLE SENDING FILE CHUNKS ---------------------
+            size_t chunk_size = MAX::max_file_chunk;
+            int num_file_chunks = m1.file_size / chunk_size;
+            int last_chunk_size = m1.file_size % chunk_size;
+            UploadM2 m2_packet;
+            Wrapper m2_wrapper;
+            bool error_occured = false;
+
+            File file;
+            file.create(file_path);
+
+            // Receive chunks from client
+            for (int i = 0; i < num_file_chunks; i++)
+            {
+                // receive Wrapper packet message
+                Buffer message_buff(Wrapper::getSize(UploadM2::getSize(chunk_size)));
+
+                if (!receiveData(clientSocket, message_buff, message_buff.size()))
+                {
+                    std::cerr << "Error receiving  data" << std::endl;
+                    error_occured = true;
+                    continue;
+                }
+
+                m2_wrapper = Wrapper(session_key);
+
+                if (!m2_wrapper.deserialize(message_buff))
+                {
+                    std::cerr << "[UPLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
+                    error_occured = true;
+                    continue;
+                }
+
+                // Check counter otherwise exit
+                if (m2_wrapper.getCounter() != rcv_counter)
+                    return false;
+
+                rcv_counter++;
+
+                m2_packet = UploadM2();
+                m2_packet.deserialize(m2_wrapper.getPayload());
+
+                file.writeChunk(m2_packet.getFileChunk());
+
+                // Log receival progess
+                cout << "[UPLOAD] Received " << (i + 1) * chunk_size << "B/ " << m1.file_size << "B" << endl;
+            }
+
+            // receive remaining data in file (if there's any)
+            if (last_chunk_size != 0)
+            {
+                Buffer message_buff(Wrapper::getSize(UploadM2::getSize(last_chunk_size)));
+
+                if (!receiveData(clientSocket, message_buff, message_buff.size()))
+                {
+                    std::cerr << "Error receiving  data" << std::endl;
+                    error_occured = true;
+                    return false;
+                }
+
+                m2_wrapper = Wrapper(session_key);
+
+                if (!m2_wrapper.deserialize(message_buff))
+                {
+                    std::cerr << "[UPLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
+                    error_occured = true;
+                    return false;
+                }
+
+                // Check counter otherwise exit
+                if (m2_wrapper.getCounter() != rcv_counter)
+                    return false;
+
+                rcv_counter++;
+
+                m2_packet = UploadM2();
+                m2_packet.deserialize(m2_wrapper.getPayload());
+
+                file.writeChunk(m2_packet.getFileChunk());
+            }
+            cout << "[UPLOAD] Received " << m1.file_size << "B/ " << m1.file_size << "B" << endl;
+
+            // -------------- HANDLE ACK PACKET ---------------------
+
+            if (error_occured)
+                ack_packet = UploadAck(0); // in case of error
+
+            else
+                ack_packet = UploadAck(1);
+
+            ack_wrapper = Wrapper(session_key, send_counter, ack_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            sendData(clientSocket, serialized_packet);
+
+            send_counter++;
         }
 
-        // download routine
+        // Download routine
         if (RequestCodes::DOWNLOAD_REQ == command_code)
         {
             // ------ HERE WE START THE DOWNLOAD ROUTINE -----

@@ -20,7 +20,7 @@ namespace MAX
 
     const size_t file_name = 255; // linux file name length limit
     const size_t username_length = 30;
-    const size_t max_file_chunk = 128 * 1024;                         // 128KB
+    const size_t max_file_chunk = 15;                                 // 1KB
     const size_t max_file_size = 4ULL * 1024 * 1024 * 1024;           // 4GB in bytes
     const size_t path = 4096;                                         // linux os imposed max absolute path length
     const size_t ack_msg = 50 + 1;                                    // extra char for str terminator

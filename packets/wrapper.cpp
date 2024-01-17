@@ -11,6 +11,8 @@ namespace crypto2
 
 }
 
+Wrapper::Wrapper() {}
+
 Wrapper::Wrapper(Buffer session_key)
 {
     this->session_key = session_key;
@@ -37,7 +39,7 @@ Buffer Wrapper::serialize()
         cerr << "[Wrapper_Serialize] Error occurred in generating IV\n";
         return Buffer(); // Return an empty buffer to indicate error
     }
-
+    // Convert counter to network byte order
     int n_counter = htonl(counter);
     // Create AAD
     aad = createAAD(n_counter, iv);
@@ -139,6 +141,6 @@ void Wrapper::print() const
     cout << "SESSION KEY: ";
     for (Buffer::const_iterator it = session_key.begin(); it < session_key.end(); ++it)
         printf("%02X", *it);
-    cout << "PLAIN/CIPHER SIZE: " << pt.size() << endl;
+    cout << "\nPLAIN/CIPHER SIZE: " << pt.size() << endl;
     cout << "------------------------------" << endl;
 }

@@ -124,41 +124,51 @@ int UploadAck::getSize()
 
 void UploadAck::print() const
 {
-    cout << "---------- UPLOAD M2 ---------" << endl;
+    cout << "---------- UPLOAD ACK ---------" << endl;
     cout << "Acknowledge Code: " << ack_code << endl;
     cout << "------------------------------" << endl;
 }
 
-// ---------------------------------- UPLOAD M3 -----------------------------------
+// ---------------------------------- UPLOAD M2 -----------------------------------
 
-UploadM3::UploadM3(Buffer file_chunk)
+UploadM2::UploadM2() {}
+
+UploadM2::UploadM2(Buffer file_chunk)
 {
     command_code = RequestCodes::UPLOAD_CHUNK;
     this->file_chunk = file_chunk;
 }
 
-Buffer UploadM3::serialize() const
+Buffer UploadM2::serialize()
 {
-    Buffer buff;
+    size_t chunk_size = file_chunk.size();
+    Buffer buff(UploadM2::getSize(chunk_size));
 
-    buff.insert(buff.begin(), command_code);
-    buff.insert(buff.end(), file_chunk.data(), file_chunk.data() + file_chunk.size());
+    size_t position = 0;
+
+    memcpy(buff.data(), &command_code, sizeof(uint8_t));
+    position += sizeof(uint8_t);
+
+    memcpy(buff.data() + position, file_chunk.data(), chunk_size * sizeof(unsigned char));
+    position += chunk_size * sizeof(unsigned char);
 
     return buff;
 }
 
-void UploadM3::deserialize(Buffer input)
+void UploadM2::deserialize(Buffer input)
 {
+    size_t chunk_size = input.size() - sizeof(uint8_t);
+    this->file_chunk = Buffer(chunk_size);
 
     size_t position = 0;
 
     memcpy(&this->command_code, input.data(), sizeof(uint8_t));
     position += sizeof(uint8_t);
 
-    memcpy(&this->file_chunk, input.data() + position, input.size() - sizeof(uint8_t));
+    memcpy(this->file_chunk.data(), input.data() + position, chunk_size * sizeof(unsigned char));
 }
 
-size_t UploadM3::getSize(size_t chunk_size)
+size_t UploadM2::getSize(size_t chunk_size)
 {
     int size = 0;
 
@@ -168,13 +178,13 @@ size_t UploadM3::getSize(size_t chunk_size)
     return size;
 }
 
-void UploadM3::print() const
+void UploadM2::print() const
 {
 
-    cout << "--------- UPLOAD M3 --------" << endl;
+    cout << "--------- UPLOAD M2 --------" << endl;
     cout << "File chunk: ";
     for (Buffer::const_iterator it = file_chunk.begin(); it < file_chunk.end(); ++it)
-        printf("%02X", *it);
-    cout << "\n CHUNK SIZE: " << file_chunk.size() << endl;
+        printf("%c", *it);
+    cout << "\nCHUNK SIZE: " << file_chunk.size() << endl;
     cout << "------------------------------" << endl;
 }

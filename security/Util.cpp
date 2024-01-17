@@ -269,7 +269,9 @@ bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
         return false;
     }
 
-    privateKey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, NULL);
+    string pem_pass = "root";
+
+    privateKey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, (void *)pem_pass.c_str());
     fclose(prvkey_file);
 
     if (!privateKey)

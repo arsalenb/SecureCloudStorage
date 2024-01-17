@@ -19,9 +19,9 @@ class UploadM1
 {
 private:
     uint8_t command_code;
-    uint32_t file_size; // 32 bit unsigned that can represent up to 4GB file sizes
 
 public:
+    uint32_t file_size;                 // 32 bit unsigned that can represent up to 4GB file sizes
     char file_name[MAX::file_name + 1]; // cstyle string to hold file name plus the '\n'
 
     UploadM1();
@@ -50,19 +50,21 @@ public:
     void print() const;
 };
 
-// ---------------------------------- UPLOAD M3 -----------------------------------
+// ---------------------------------- UPLOAD M2 -----------------------------------
 
-class UploadM3
+class UploadM2
 {
 private:
     uint8_t command_code;
     Buffer file_chunk;
 
 public:
-    UploadM3(Buffer file_chunk);
-    Buffer serialize() const;
+    UploadM2();
+    UploadM2(Buffer file_chunk);
+    Buffer serialize();
     void deserialize(Buffer file_chunk);
     static size_t getSize(size_t chunk_size);
+    Buffer getFileChunk() { return file_chunk; }
     void print() const;
 };
 

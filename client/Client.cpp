@@ -455,9 +455,9 @@ void Client::performClientJob()
     }
 
     // end login phase
-    // upload_file();
+    upload_file();
     // download_file();
-    list_files();
+    // list_files();
 }
 
 int Client::upload_file()
@@ -557,7 +557,79 @@ int Client::upload_file()
         return 0;
     }
 
-    return 1;
+    // -------------- HANDLE SENDING FILE CHUNKS ---------------------
+    size_t chunk_size = MAX::max_file_chunk;
+    int num_file_chunks = file.getFileSize() / chunk_size;
+    int last_chunk_size = file.getFileSize() % chunk_size;
+    UploadM2 m2_packet;
+    Wrapper m2_wrapper;
+
+    // Send chunks to server
+    for (int i = 0; i < num_file_chunks; i++)
+    {
+        m2_packet = UploadM2(file.readChunk(chunk_size));
+
+        m2_wrapper = Wrapper(session_key, send_counter, m2_packet.serialize());
+
+        serialized_packet = m2_wrapper.serialize();
+        if (!sendData(clientSocket, serialized_packet))
+            return false;
+
+        incrementCounter();
+
+        // Log upload progess
+        cout << "[UPLOAD] Uploaded " << (i + 1) * chunk_size << "/" << file.getFileSize() << "Bytes" << endl;
+    }
+    // send remaining data in file (if there's any)
+    if (last_chunk_size != 0)
+    {
+        m2_packet = UploadM2(file.readChunk(last_chunk_size));
+
+        Wrapper m2_wrapper(session_key, send_counter, m2_packet.serialize());
+
+        serialized_packet = m2_wrapper.serialize();
+        if (!sendData(clientSocket, serialized_packet))
+            return false;
+
+        incrementCounter();
+    }
+
+    cout << "[UPLOAD] Uploaded " << file.getFileSize() << "/" << file.getFileSize() << "Bytes" << endl;
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer final_ack_buffer(Wrapper::getSize(UploadAck::getSize()));
+    if (!receiveData(clientSocket, final_ack_buffer, final_ack_buffer.size()))
+    {
+        std::cerr << "Error receiving data" << std::endl;
+        return false;
+    }
+    // deserialize to extract payload in plaintext
+    wrapped_packet = Wrapper(session_key);
+
+    if (!wrapped_packet.deserialize(final_ack_buffer))
+    {
+        std::cerr << "[UPLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    ack = UploadAck();
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (!ack.getAckCode())
+    {
+        std::cerr << "[CLIENT] Uploading file " << file.get_file_name() << " has failed!" << endl;
+        return 0;
+    }
+    else
+    {
+        cout << "[CLIENT] " << file.get_file_name() << " uploaded successfully" << endl;
+        return 1;
+    }
 }
 
 int Client::download_file()

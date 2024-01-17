@@ -22,6 +22,7 @@ private:
     Buffer createAAD(int counter, Buffer iv);
 
 public:
+    Wrapper();
     Wrapper(Buffer session_key);
     Wrapper(Buffer session_key, int counter, Buffer payload);
     Buffer serialize();
