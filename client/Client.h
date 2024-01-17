@@ -35,6 +35,7 @@ public:
     int upload_file();
     void incrementCounter();
     int download_file();
+    int list_files();
 
     ~Client();
 };

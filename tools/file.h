@@ -28,6 +28,7 @@ public:
     uintmax_t getFileSize() { return file_size; }
     std::string get_file_name() { return file_name; };
     static bool exists(std::string filePath);
+    std::string getFileNames(const std::string &folderPath);
     ~File();
 };
 

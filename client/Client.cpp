@@ -17,6 +17,7 @@
 #include "../packets/upload.h"
 #include "../packets/wrapper.h"
 #include "download.h"
+#include "list.h"
 
 using namespace std;
 Client::Client() {}
@@ -455,7 +456,8 @@ void Client::performClientJob()
 
     // end login phase
     // upload_file();
-    download_file();
+    // download_file();
+    list_files();
 }
 
 int Client::upload_file()
@@ -602,14 +604,145 @@ int Client::download_file()
     // increment counter
     incrementCounter();
 
-    // std::cout << "shared secret:" << endl;
-    // for (it = IV.begin(); it < IV.end(); it++)
-    //     printf("%02X", *it);
-    // std::cout << '\n';
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(Wrapper::getSize(DownloadAck::getSize()));
+    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    {
+        std::cerr << "Error receiving  data" << std::endl;
+        return false;
+    }
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
+
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    DownloadAck ack;
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (ack.getAckCode() == 1)
+    {
+        std::cerr << "[CLIENT] File doe not exist on the cloud!" << endl;
+        return 0;
+    }
 
     return 1;
 }
 
+int Client::list_files()
+{
+    bool file_valid = false;
+    File file;
+
+    cout << "****************************************" << endl;
+    cout << "*********     List Files    *********" << endl;
+    cout << "****************************************" << endl;
+
+    // Create List M1 type packet
+    ListM1 m1;
+
+    Buffer serializedPacket = m1.serialize();
+    // Create on the M1 message the wrapper packet to be sent
+    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
+
+    m1_wrapper.print(); // debug
+
+    // serialize M1 Wrapper packet
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+    {
+        return false;
+    }
+    clear_vec(serialized_packet);
+
+    // increment counter
+    incrementCounter();
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(Wrapper::getSize(ListM2::getSize()));
+    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    {
+        std::cerr << "Error receiving  data" << std::endl;
+        return false;
+    }
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
+
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    ListM2 ack_size_packet;
+    ack_size_packet.deserialize(wrapped_packet.getPayload());
+
+    if (ack_size_packet.getAckCode() == 1)
+    {
+        std::cerr << "[CLIENT] Folder doe not exist on the cloud!" << endl;
+        return 0;
+    }
+
+    uint32_t file_list_size = ack_size_packet.getFile_List_Size();
+
+    // receive the list of files from the server
+
+    ListM3 m3(file_list_size);
+
+    Buffer list_buffer(Wrapper::getSize(m3.getSize()));
+    if (!receiveData(clientSocket, list_buffer, list_buffer.size()))
+    {
+        std::cerr << "Error receiving  data" << std::endl;
+        return false;
+    }
+
+    // deserialize to extract payload in plaintext
+    Wrapper m3_wrapper(session_key);
+
+    if (!m3_wrapper.deserialize(list_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (m3_wrapper.getCounter() != rcv_counter)
+        return 0;
+
+    m3.deserialize(m3_wrapper.getPayload());
+    std::string fileListData = m3.getFileListData();
+
+    rcv_counter++;
+
+    // print the file names
+    std::istringstream ss(fileListData);
+
+    // Temporary string to store each element
+    std::string token;
+
+    // Use std::getline to split the string by commas
+    while (std::getline(ss, token, ','))
+    {
+        // Print the file name
+        std::cout << token << std::endl;
+    }
+
+    return 1;
+}
 void Client::incrementCounter()
 {
     if (send_counter == MAX::counter_max_value)

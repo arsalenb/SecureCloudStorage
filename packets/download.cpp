@@ -56,35 +56,38 @@ void DownloadM1::print() const
 
 // ----------------------------------- DOWNLOAD ACKNOWLEDGEMENT ------------------------------------
 
-DownloadM2::DownloadM2() {}
+DownloadAck::DownloadAck() {}
 
-DownloadM2::DownloadM2(string ack_msg, uint32_t file_size)
+DownloadAck::DownloadAck(uint8_t ack_code, uint32_t file_size)
 {
     this->command_code = RequestCodes::DOWNLOAD_REQ;
     this->file_size = file_size;
-    strncpy(this->ack_msg, ack_msg.c_str(), MAX::ack_msg + 1);
+    this->ack_code = ack_code;
 }
 
-Buffer DownloadM2::serialize() const
+Buffer DownloadAck::serialize() const
 {
-    Buffer buff;
+    Buffer buff(DownloadAck::getSize());
+    size_t position = 0;
 
-    buff.insert(buff.begin(), command_code);
+    memcpy(buff.data(), &command_code, sizeof(uint8_t));
+    position += sizeof(uint8_t);
+
     // Convert file_size to network byte order
     uint32_t no_file_size = htonl(file_size);
 
     // Insert file_size into the buffer
     unsigned char const *file_size_begin = reinterpret_cast<unsigned char const *>(&no_file_size);
-    buff.insert(buff.end(), file_size_begin, file_size_begin + sizeof(uint32_t));
+    memcpy(buff.data() + position, file_size_begin, sizeof(uint32_t));
+    position += sizeof(uint32_t);
 
-    // Insert ack_msg into the buffer
-    unsigned char const *ack_msg_pointer = reinterpret_cast<unsigned char const *>(&ack_msg);
-    buff.insert(buff.end(), ack_msg_pointer, ack_msg_pointer + ((MAX::ack_msg + 1) * sizeof(char)));
+    // Insert ack_code into the buffer
+    memcpy(buff.data() + position, &ack_code, sizeof(uint8_t));
 
     return buff;
 }
 
-void DownloadM2::deserialize(Buffer input)
+void DownloadAck::deserialize(Buffer input)
 {
 
     size_t position = 0;
@@ -99,25 +102,25 @@ void DownloadM2::deserialize(Buffer input)
     file_size = ntohl(network_filesize);
     position += sizeof(uint32_t);
 
-    // Extract ack_msg from the buffer
-    memcpy(&this->ack_msg, input.data() + position, (MAX::ack_msg + 1) * sizeof(char));
+    // Extract ack_code from the buffer
+    memcpy(&this->ack_code, input.data() + position, sizeof(uint8_t));
 }
 
-int DownloadM2::getSize()
+int DownloadAck::getSize()
 {
     int size = 0;
 
     size += sizeof(uint8_t);
     size += sizeof(uint32_t); // file_size
-    size += (MAX::ack_msg + 1) * sizeof(char);
+    size += sizeof(uint8_t);
 
     return size;
 }
 
-void DownloadM2::print() const
+void DownloadAck::print() const
 {
     cout << "---------- DOWNLOAD ACKNOWLEDGEMENT ---------" << endl;
-    cout << "Acknowledge message: " << ack_msg << endl;
+    cout << "Acknowledge message: " << ack_code << endl;
     cout << "--------------------------------------------" << endl;
 }
 

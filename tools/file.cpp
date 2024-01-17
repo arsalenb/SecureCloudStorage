@@ -3,8 +3,15 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <vector>
+#include <numeric>
 
-File::File() {}
+using namespace std;
+
+File::File()
+{
+}
 
 void File::read(const std::string &filePath)
 {
@@ -129,4 +136,32 @@ File::~File()
 
     if (output_fs.is_open())
         output_fs.close();
+}
+
+std::string File::getFileNames(const std::string &folderPath)
+{
+    std::vector<std::string> fileNames;
+
+    try
+    {
+        for (const auto &entry : std::filesystem::directory_iterator(folderPath))
+        {
+            if (entry.is_regular_file())
+            {
+                fileNames.push_back(entry.path().filename().string());
+            }
+        }
+    }
+    catch (const std::filesystem::filesystem_error &ex)
+    {
+        std::cerr << "Error accessing folder: " << ex.what() << std::endl;
+        return ""; // Return an empty string to indicate an error
+    }
+
+    // Join the file names using commas
+    return std::accumulate(fileNames.begin(), fileNames.end(), std::string(),
+                           [](const std::string &a, const std::string &b) -> std::string
+                           {
+                               return a + (a.length() > 0 ? "," : "") + b;
+                           });
 }

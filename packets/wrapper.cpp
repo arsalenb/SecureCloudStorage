@@ -38,8 +38,9 @@ Buffer Wrapper::serialize()
         return Buffer(); // Return an empty buffer to indicate error
     }
 
+    int n_counter = htonl(counter);
     // Create AAD
-    aad = createAAD(counter, iv);
+    aad = createAAD(n_counter, iv);
 
     // encrypt using AES_CCM_128 the payload
     if (!encrypt_aes_ccm(pt, ct, session_key, iv, aad, tag))
@@ -50,7 +51,7 @@ Buffer Wrapper::serialize()
 
     // create wrapper packet: IV | Counter | CT | TAG
     packet.insert(packet.begin(), iv.begin(), iv.end()); // Add IV
-    packet.insert(packet.end(), reinterpret_cast<const uint8_t *>(&counter), reinterpret_cast<const uint8_t *>(&counter) + sizeof(counter));
+    packet.insert(packet.end(), reinterpret_cast<char *>(&n_counter), reinterpret_cast<char *>(&n_counter) + sizeof(counter));
     packet.insert(packet.end(), ct.begin(), ct.end());   // Add CT
     packet.insert(packet.end(), tag.begin(), tag.end()); // Add TAG
 
@@ -87,7 +88,7 @@ int Wrapper::deserialize(Buffer wrapper)
     memcpy(tag.data(), wrapper.data() + position, crypto2::TAG_LENGTH * sizeof(unsigned char));
 
     // Create AAD
-    aad = createAAD(counter, iv);
+    aad = createAAD(n_counter, iv);
 
     // decrypt using AES_CCM_128 the ciphertext
     if (!decrypt_aes_ccm(ct, pt, session_key, iv, aad, tag))

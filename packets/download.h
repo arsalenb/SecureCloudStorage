@@ -32,19 +32,20 @@ public:
 
 // ----------------------------------- DOWNLOAD ACKNOWLEDGEMENT ------------------------------------
 
-class DownloadM2
+class DownloadAck
 {
 private:
     uint8_t command_code;
-    char ack_msg[MAX::ack_msg + 1];
+    uint8_t ack_code;
     uint32_t file_size;
 
 public:
-    DownloadM2();
-    DownloadM2(string ack_msg, uint32_t file_size);
+    DownloadAck();
+    DownloadAck(uint8_t ack_code, uint32_t file_size);
     Buffer serialize() const;
     void deserialize(Buffer buffer);
     static int getSize();
+    uint8_t getAckCode() { return ack_code; };
     void print() const;
 };
 

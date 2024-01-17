@@ -17,6 +17,8 @@
 #include "../packets/wrapper.h"
 #include "../tools/file.h"
 #include "download.h"
+#include "list.h"
+#include <filesystem>
 
 using namespace std;
 const int PORT = 8080;
@@ -359,7 +361,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         // download routine
         if (RequestCodes::DOWNLOAD_REQ == command_code)
         {
-            // ------ HERE WE START THE UPLOAD ROUTINE -----
+            // ------ HERE WE START THE DOWNLOAD ROUTINE -----
             // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
 
             // Deserialize m1 general packet
@@ -378,10 +380,113 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             string filename = (string)m1.file_name;
             string file_path = "../data/" + receivedUsername + "/" + (string)m1.file_name;
 
+            DownloadAck ack_packet;
+            File file;
+            uintmax_t file_size;
+
             if (File::exists(file_path))
-                cout << "found " << command_code << endl; // in case of success
+            {
+                // open the file denoted in path
+                try
+                {
+                    file_size = filesystem::file_size(file_path);
+                    ack_packet = DownloadAck(0, file_size);
+                }
+                catch (const std::exception &e)
+                {
+                    std::cerr << "[DOWNLOAD] " << e.what() << std::endl;
+                    ack_packet = DownloadAck(1, 0); // error code : 1
+                    return 0;
+                }
+
+                // check if file is not empty
+                if (file_size == 0)
+                {
+                    cerr << "[DOWNLOAD] Cannot download empty files!" << endl;
+                    ack_packet = DownloadAck(1, 0); // error code : 1
+                    return 0;
+                }
+            }
             else
-                cout << "not found " << command_code << endl; // if file doesn't exist, error code : 1
+            {
+                // file does not exist
+                ack_packet = DownloadAck(1, 0); // error code : 1
+            }
+
+            Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            sendData(clientSocket, serialized_packet);
+
+            send_counter++;
+        }
+
+        // list routine
+        if (RequestCodes::LIST_REQ == command_code)
+        {
+            // ------ HERE WE START THE List ROUTINE -----
+            // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
+
+            // Deserialize m1 general packet
+            ListM1 m1;
+            m1.deserialize(payload);
+            Buffer serialized_packet;
+
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            ListM2 ack_size_packet;
+            File file;
+            uintmax_t file_size;
+            string folder_path = "../data/" + receivedUsername;
+            string fileNames;
+
+            if (std::filesystem::exists(folder_path) && std::filesystem::is_directory(folder_path))
+            {
+
+                try
+                {
+                    fileNames = file.getFileNames(folder_path);
+                    ack_size_packet = ListM2(0, fileNames.length());
+                }
+                catch (const std::exception &e)
+                {
+                    std::cerr << "[List] " << e.what() << std::endl;
+                    ack_size_packet = ListM2(1, 0); // error code : 1
+                    return 0;
+                }
+            }
+            else
+            {
+                // folder does not exist
+                ack_size_packet = ListM2(1, 0); // error code : 1
+                return 0;
+            }
+
+            Wrapper ack_wrapper(session_key, send_counter, ack_size_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            sendData(clientSocket, serialized_packet);
+
+            send_counter++;
+
+            // send the list of files to the client
+
+            ListM3 m3(fileNames.length());
+            m3.setFileListData(fileNames.c_str());
+
+            Wrapper wrapper(session_key, send_counter, m3.serialize());
+            wrapper.print();
+
+            serialized_packet = wrapper.serialize();
+            sendData(clientSocket, serialized_packet);
+
+            send_counter++;
         }
 
         // Clean up
