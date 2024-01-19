@@ -18,6 +18,8 @@
 #include "../packets/wrapper.h"
 #include "download.h"
 #include "list.h"
+#include "rename.h"
+#include "delete.h"
 
 using namespace std;
 Client::Client() {}
@@ -55,12 +57,23 @@ bool Client::connectToServer()
 
 bool Client::sendUsername()
 {
-    std::cout << "Enter your username (up to 5 characters): ";
-    std::cin >> username;
+    std::cout << "Enter your username (up to " + to_string(MAX::username_length) + " characters): ";
+    std::getline(std::cin, username);
 
-    if (username.size() > MAX_USERNAME_LENGTH)
+    // make sure input was valid and non null
+    if (!cin || username.empty() || username.length() > MAX::username_length)
     {
-        std::cerr << "Error: Username is too long. Maximum length is 5 characters." << std::endl;
+        cerr << "[Login] Invalid username input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return false;
+    }
+
+    // Send username size to the server
+    size_t usernameLength = username.size();
+    if (!sendNumber(clientSocket, usernameLength))
+    {
+        std::cerr << "Error sending the username length" << std::endl;
         return false;
     }
 
@@ -79,21 +92,46 @@ bool Client::sendUsername()
 
 bool Client::receiveServerResponse()
 {
-    int responseSize = 1;
-    vector<unsigned char> buffer(responseSize + 1, 0); // +1 for null terminator
-    if (!receiveData(clientSocket, buffer, responseSize))
+
+    size_t server_response;
+    if (!receiveNumber(clientSocket, server_response))
     {
+        // Handle the error if receiving data fails
+        cerr << "Error receiving the response from server" << endl;
         return false;
     }
 
-    std::string serverResponse(buffer.begin(), buffer.end());
-    std::cout << "Server response: " << serverResponse << std::endl;
+    std::cout << "Server response: " << server_response << std::endl;
 
     // Implement the logic to handle the server response
 
-    if (serverResponse.compare("1") == 0)
+    if (server_response == 0)
     {
         std::cerr << "User does not exist" << std::endl;
+        return false;
+    }
+    // User exists, read the password of private key of the user
+
+    // Read password from console
+    std::cout << "Enter the password of the private key: " << endl;
+    std::getline(std::cin, password);
+
+    // make sure input was valid and non null
+    if (!cin || password.empty() || password.length() > MAX::passowrd_length)
+    {
+        cerr << "[Login] Invalid password input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return false;
+    }
+    // read user private key
+    std::string privateKeyPath = "users/" + username + "/key.pem";
+    EVP_PKEY *prvkey = nullptr;
+
+    if (!loadPrivateKey(privateKeyPath, prvkey, password))
+    {
+        cerr << "[Login] Invalid password for the private key" << endl;
+
         return false;
     }
 
@@ -281,14 +319,6 @@ bool Client::receiveServerResponse()
         {
             return 0;
         }
-        // read user private key
-        std::string privateKeyPath = "users/" + username + "/key.pem";
-        EVP_PKEY *prvkey = nullptr;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        if (!loadPrivateKey(privateKeyPath, prvkey))
-        {
-            return 0;
-        }
 
         // create the digiatl signature <(g^a,g^b)>c using the client private key
         vector<unsigned char> signature;
@@ -455,9 +485,11 @@ void Client::performClientJob()
     }
 
     // end login phase
-    upload_file();
+    // upload_file();
     // download_file();
     // list_files();
+    // rename_file();
+    delete_file();
 }
 
 int Client::upload_file()
@@ -652,6 +684,7 @@ int Client::download_file()
         cerr << "[Download] Invalid filename input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return 0;
     }
     // Create Download M1 type packet
     DownloadM1 m1(filename);
@@ -814,6 +847,187 @@ int Client::list_files()
     }
 
     return 1;
+}
+
+int Client::rename_file()
+{
+    bool file_valid = false;
+    File file;
+
+    cout << "****************************************" << endl;
+    cout << "*********     RENAME FILE      *********" << endl;
+    cout << "****************************************" << endl;
+
+    // Read file name from console
+    std::cout << "Enter file name:" << endl;
+    std::string file_name;
+    std::getline(std::cin, file_name);
+
+    // make sure input was valid and non null
+    if (!cin || file_name.empty())
+    {
+        cerr << "[RENAME] Invalid file name input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return 0;
+    }
+
+    // Read file name from console
+    std::cout << "Enter new file name:" << endl;
+    std::string new_file_name;
+    std::getline(std::cin, new_file_name);
+
+    // make sure input was valid and non null
+    if (!cin || new_file_name.empty())
+    {
+        cerr << "[RENAME] Invalid new file name input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return 0;
+    }
+
+    // Create Rename M1 type packet
+    RenameM1 m1(file_name, new_file_name);
+
+    m1.print();
+    Buffer serializedPacket = m1.serialize();
+
+    // Create on the M1 message the wrapper packet to be sent
+    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
+    m1_wrapper.print(); // debug
+
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // Send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+        return false;
+
+    clear_vec(serialized_packet);
+    incrementCounter(); // increment send counter
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(Wrapper::getSize(RenameAck::getSize()));
+    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    {
+        std::cerr << "Error receiving  data" << std::endl;
+        return false;
+    }
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
+
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    RenameAck ack;
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (ack.getAckCode() == 0)
+    {
+        std::cout << "[CLIENT] File renamed successfully on the cloud!" << endl;
+        return 1;
+    }
+    else if (ack.getAckCode() == 1)
+    {
+        std::cerr << "[CLIENT] File rename failed on the cloud!" << endl;
+        return 0;
+    }
+    if (ack.getAckCode() == 2)
+    {
+        std::cerr << "[CLIENT] File does not exist on the cloud!" << endl;
+        return 0;
+    }
+    return 0;
+}
+int Client::delete_file()
+{
+    bool file_valid = false;
+    File file;
+
+    cout << "****************************************" << endl;
+    cout << "*********     DELETE FILE      *********" << endl;
+    cout << "****************************************" << endl;
+
+    // Read file name from console
+    std::cout << "Enter file name:" << endl;
+    std::string file_name;
+    std::getline(std::cin, file_name);
+
+    // make sure input was valid and non null
+    if (!cin || file_name.empty())
+    {
+        cerr << "[Delete] Invalid file name input" << endl;
+        std::cin.clear(); // put us back in 'normal' operation mode
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        return 0;
+    }
+
+    // Create Delete M1 type packet
+    DeleteM1 m1(file_name);
+
+    m1.print();
+    Buffer serializedPacket = m1.serialize();
+
+    // Create on the M1 message the wrapper packet to be sent
+    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
+    m1_wrapper.print(); // debug
+
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // Send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+        return false;
+
+    clear_vec(serialized_packet);
+    incrementCounter(); // increment send counter
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(Wrapper::getSize(DeleteAck::getSize()));
+    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    {
+        std::cerr << "Error receiving  data" << std::endl;
+        return false;
+    }
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
+
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        return false;
+    }
+
+    if (wrapped_packet.getCounter() != rcv_counter)
+        return 0;
+
+    rcv_counter++;
+
+    DeleteAck ack;
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (ack.getAckCode() == 0)
+    {
+        std::cout << "[CLIENT] File deleted successfully on the cloud!" << endl;
+        return 1;
+    }
+    else if (ack.getAckCode() == 1)
+    {
+        std::cerr << "[CLIENT] File deletion failed on the cloud!" << endl;
+        return 0;
+    }
+    if (ack.getAckCode() == 2)
+    {
+        std::cerr << "[CLIENT] File does not exist on the cloud!" << endl;
+        return 0;
+    }
+    return 0;
 }
 void Client::incrementCounter()
 {

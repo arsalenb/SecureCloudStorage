@@ -29,6 +29,8 @@ public:
     std::string get_file_name() { return file_name; };
     static bool exists(std::string filePath);
     std::string getFileNames(const std::string &folderPath);
+    int changeFileName(const std::string &filePath, const std::string &newFilePath);
+    int deleteFile(const std::string &filePath);
     ~File();
 };
 

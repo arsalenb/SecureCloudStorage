@@ -34,7 +34,7 @@ bool deserializeLoginMessageFromTheClient(vector<unsigned char> &receivedBuffer,
                                           vector<unsigned char> &cipher_text, vector<unsigned char> &iv);
 
 size_t calLengthLoginMessageFromTheServer();
-bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey);
+bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey, string pem_pas);
 bool loadPublicKey(const std::string publicKeyPath, EVP_PKEY *&publicKey);
 bool sendData(int socket, std::vector<unsigned char> &data);
 bool receiveData(int socket, std::vector<unsigned char> &buffer, size_t bufferSize);

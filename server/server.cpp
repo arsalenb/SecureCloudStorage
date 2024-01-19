@@ -18,26 +18,47 @@
 #include "../tools/file.h"
 #include "download.h"
 #include "list.h"
+#include "rename.h"
+#include "delete.h"
 #include <filesystem>
+#include <signal.h>
 
 using namespace std;
 const int PORT = 8080;
 const int BUFFER_SIZE = 4096;
 const int MAX_USERNAME_LENGTH = 5;
 
+void handler(int s)
+{
+    printf("Caught SIGPIPE\n");
+}
 // Function to handle each connected client
 int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 {
     int send_counter = 0;
     int rcv_counter = 0;
+    // signal(SIGPIPE, handler);
 
-    vector<unsigned char> buffer(MAX_USERNAME_LENGTH);
+    size_t username_length;
+    if (!receiveNumber(clientSocket, username_length))
+    {
+        // Handle the error if receiving data fails
+        cerr << "Error receiving username length from client" << endl;
+        return 0;
+    }
+    if (username_length > MAX::username_length)
+    {
+        std::cerr << "Error: Username is too long. Maximum length is" + std::to_string(MAX::username_length) + " characters." << std::endl;
+        return 0;
+    }
 
-    if (!receiveData(clientSocket, buffer, MAX_USERNAME_LENGTH))
+    vector<unsigned char> buffer(username_length);
+
+    if (!receiveData(clientSocket, buffer, username_length))
     {
         cerr << "Error receiving username from client" << endl;
         close(clientSocket);
-        return false;
+        return 0;
     }
 
     std::string receivedUsername(buffer.begin(), buffer.end());
@@ -55,13 +76,12 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         }
     }
     // Send result back to client
-    unsigned char resultChar = (usernameExists) ? '1' : '0';
-    vector<unsigned char> resultMsg;
-    resultMsg.push_back(resultChar);
+    size_t result = (usernameExists) ? 1 : 0;
 
-    if (!sendData(clientSocket, resultMsg))
+    if (!sendNumber(clientSocket, result))
     {
-        return false;
+        std::cerr << "Error sending the result to the client" << std::endl;
+        return 0;
     }
 
     if (usernameExists)
@@ -125,7 +145,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         if (!sendNumber(clientSocket, certSize))
         {
             std::cerr << "Error sending the certificate size" << std::endl;
-            return false;
+            return 0;
         }
 
         // Send the certificate data to the client
@@ -212,7 +232,8 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         // read server private key
         // load server private key:
         EVP_PKEY *prvkey = nullptr;
-        if (!loadPrivateKey("server_private_key.pem", prvkey))
+        string pem_pass = "root";
+        if (!loadPrivateKey("server_private_key.pem", prvkey, pem_pass))
         {
             return 0;
         }
@@ -353,7 +374,12 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             ack_wrapper.print();
 
             serialized_packet = ack_wrapper.serialize();
-            sendData(clientSocket, serialized_packet);
+
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
 
             send_counter++;
             // -------------- HANDLE SENDING FILE CHUNKS ---------------------
@@ -450,7 +476,11 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             ack_wrapper.print();
 
             serialized_packet = ack_wrapper.serialize();
-            sendData(clientSocket, serialized_packet);
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
 
             send_counter++;
         }
@@ -514,7 +544,11 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             ack_wrapper.print();
 
             serialized_packet = ack_wrapper.serialize();
-            sendData(clientSocket, serialized_packet);
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
 
             send_counter++;
         }
@@ -554,21 +588,23 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
                 {
                     std::cerr << "[List] " << e.what() << std::endl;
                     ack_size_packet = ListM2(1, 0); // error code : 1
-                    return 0;
                 }
             }
             else
             {
                 // folder does not exist
                 ack_size_packet = ListM2(1, 0); // error code : 1
-                return 0;
             }
 
             Wrapper ack_wrapper(session_key, send_counter, ack_size_packet.serialize());
             ack_wrapper.print();
 
             serialized_packet = ack_wrapper.serialize();
-            sendData(clientSocket, serialized_packet);
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
 
             send_counter++;
 
@@ -581,7 +617,129 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             wrapper.print();
 
             serialized_packet = wrapper.serialize();
-            sendData(clientSocket, serialized_packet);
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
+
+            send_counter++;
+        }
+
+        if (RequestCodes::RENAME_REQ == command_code)
+        {
+            // ------ HERE WE START THE RENAME ROUTINE -----
+            // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
+
+            // Deserialize m1 general packet
+            RenameM1 m1;
+            m1.deserialize(payload);
+            m1.print(); // for debug
+            Buffer serialized_packet;
+
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            // Check if the file exists
+            string file_name = (string)m1.file_name;
+            string new_file_name = (string)m1.new_file_name;
+            string file_path = "../data/" + receivedUsername + "/" + file_name;
+            string new_file_path = "../data/" + receivedUsername + "/" + new_file_name;
+
+            RenameAck ack_packet;
+            File file;
+
+            uintmax_t file_size;
+
+            if (File::exists(file_path))
+            {
+                // check if there is already no file with the same new name
+                if (!File::exists(new_file_path) && file.changeFileName(file_path, new_file_path) == 0)
+                {
+
+                    ack_packet = RenameAck(0); // 0 means success
+                }
+                else
+                {
+                    ack_packet = RenameAck(1); // error code : 1 means file rename failed
+                }
+            }
+            else
+            {
+                // file does not exist
+                ack_packet = RenameAck(2); // error code : 2 means the file does not exist
+            }
+
+            Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
+
+            send_counter++;
+        }
+
+        if (RequestCodes::DELETE_REQ == command_code)
+        {
+            // ------ HERE WE START THE DELETE ROUTINE -----
+            // ------ IN CASE OF ERROR WE EXIT TO LIST COMMANDS -----
+
+            // Deserialize m1 general packet
+            DeleteM1 m1;
+            m1.deserialize(payload);
+            m1.print(); // for debug
+            Buffer serialized_packet;
+
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            // Check if the file exists
+            string file_name = (string)m1.file_name;
+            string file_path = "../data/" + receivedUsername + "/" + file_name;
+
+            DeleteAck ack_packet;
+            File file;
+
+            uintmax_t file_size;
+
+            if (File::exists(file_path))
+            {
+                // check if there is already no file with the same new name
+                if (file.deleteFile(file_path) == 0)
+                {
+
+                    ack_packet = DeleteAck(0); // 0 means success
+                }
+                else
+                {
+                    ack_packet = DeleteAck(1); // error code : 1 means file deletion failed
+                }
+            }
+            else
+            {
+                // file does not exist
+                ack_packet = DeleteAck(2); // error code : 2 means the file does not exist
+            }
+
+            Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
+            ack_wrapper.print();
+
+            serialized_packet = ack_wrapper.serialize();
+            if (!sendData(clientSocket, serialized_packet))
+            {
+                std::cerr << "Error sending the serialized packet" << std::endl;
+                return 0;
+            }
 
             send_counter++;
         }

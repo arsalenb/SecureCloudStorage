@@ -10,7 +10,6 @@
 
 const int PORT = 8080;
 const int MAX_CERTIFICATE_SIZE = 4096;
-const int MAX_USERNAME_LENGTH = 5;
 
 typedef std::vector<unsigned char> Buffer;
 
@@ -18,6 +17,7 @@ class Client
 {
 private:
     std::string username;
+    std::string password;
     int clientSocket;
     Buffer session_key;
     int send_counter = 0;
@@ -36,6 +36,8 @@ public:
     void incrementCounter();
     int download_file();
     int list_files();
+    int rename_file();
+    int delete_file();
 
     ~Client();
 };

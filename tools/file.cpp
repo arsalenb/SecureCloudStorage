@@ -165,3 +165,17 @@ std::string File::getFileNames(const std::string &folderPath)
                                return a + (a.length() > 0 ? "," : "") + b;
                            });
 }
+
+int File::changeFileName(const std::string &filePath, const std::string &newFilePath)
+{
+
+    // Rename the file
+    return rename(filePath.c_str(), newFilePath.c_str());
+}
+
+int File::deleteFile(const std::string &filePath)
+{
+
+    // Rename the file
+    return remove(filePath.c_str());
+}

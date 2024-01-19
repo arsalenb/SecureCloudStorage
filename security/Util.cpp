@@ -30,7 +30,7 @@ bool receiveEphemeralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, std
     if (!receiveNumber(clientSocket, serializedKeyLength))
     {
         std::cerr << "Error receiving Key size" << std::endl;
-        return 1;
+        return false;
     }
     if (serializedKeyLength > Max_Ephemral_Public_Key_Size)
     {
@@ -259,7 +259,7 @@ bool deserializeLoginMessageFromTheClient(vector<unsigned char> &receivedBuffer,
     return true;
 }
 
-bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
+bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey, string pem_pass)
 {
     FILE *prvkey_file = fopen(privateKeyPath.c_str(), "r");
 
@@ -268,8 +268,6 @@ bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey)
         std::cerr << "Error: Cannot open private key file: " << privateKeyPath << "\n";
         return false;
     }
-
-    string pem_pass = "root";
 
     privateKey = PEM_read_PrivateKey(prvkey_file, NULL, NULL, (void *)pem_pass.c_str());
     fclose(prvkey_file);
@@ -307,56 +305,109 @@ bool loadPublicKey(const std::string publicKeyPath, EVP_PKEY *&publicKey)
 
 bool receiveData(int socket, std::vector<unsigned char> &buffer, size_t bufferSize)
 {
-    ssize_t bytesRead = recv(socket, buffer.data(), bufferSize, MSG_WAITALL);
-
-    if (bytesRead <= 0)
+    try
     {
-        std::cerr << "Error receiving data " << std::endl;
-        return false;
+        ssize_t bytesRead = recv(socket, buffer.data(), bufferSize, MSG_WAITALL);
+
+        if (bytesRead <= 0)
+        {
+            std::cerr << "Error receiving data " << std::endl;
+            return false;
+        }
+
+        return true;
     }
 
-    return true;
+    catch (const std::exception &e)
+    {
+        // Catch the exception and handle it
+        std::cerr << "Exception: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 bool sendData(int socket, std::vector<unsigned char> &data)
 {
 
-    ssize_t bytesSent = send(socket, data.data(), data.size(), 0);
-
-    if (bytesSent == -1)
+    try
     {
-        std::cerr << "Error sending data to server" << std::endl;
+        ssize_t bytesSent = send(socket, data.data(), data.size(), MSG_NOSIGNAL);
 
+        if (bytesSent == -1)
+        {
+
+            if (errno == EPIPE)
+            {
+                std::cerr << "Error sending data due to a connection issue" << std::endl;
+
+                return false;
+            }
+            std::cerr << "Error sending data " << std::endl;
+
+            return false;
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        // Catch the exception and handle it
+        std::cerr << "Exception: " << e.what() << std::endl;
         return false;
     }
-
-    return true;
 }
 
 bool receiveNumber(int socket, size_t &number)
 {
-    ssize_t bytesReceived = recv(socket, &number, sizeof(number), MSG_WAITALL);
 
-    if (bytesReceived <= 0)
+    try
     {
-        std::cerr << "Error receiving the number " << std::endl;
-        return false;
+        ssize_t bytesReceived = recv(socket, &number, sizeof(number), MSG_WAITALL);
+
+        if (bytesReceived <= 0)
+        {
+            std::cerr << "Error receiving the number " << std::endl;
+            return false;
+        }
+        return true;
     }
 
-    return true;
+    catch (const std::exception &e)
+    {
+        // Catch the exception and handle it
+        std::cerr << "Exception: " << e.what() << std::endl;
+        return false;
+    }
 }
 
 bool sendNumber(int socket, size_t number)
 {
-    ssize_t bytesSent = send(socket, &number, sizeof(number), 0);
-
-    if (bytesSent != sizeof(number))
+    try
     {
-        std::cerr << "Error sending the number" << std::endl;
+        ssize_t bytesSent = send(socket, &number, sizeof(number), MSG_NOSIGNAL);
+
+               if (bytesSent != sizeof(number) || bytesSent == -1)
+        {
+
+            if (errno == EPIPE)
+            {
+                std::cerr << "Error sending number due to a connection issue" << std::endl;
+
+                return false;
+            }
+            std::cerr << "Error sending the number " << std::endl;
+
+            return false;
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
+    {
+        // Catch the exception and handle it
+        std::cerr << "Exception: " << e.what() << std::endl;
         return false;
     }
-
-    return true;
 }
 
 void clear_vec(vector<unsigned char> &v)
