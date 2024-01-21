@@ -13,13 +13,14 @@
 
 #include "../security/Util.h"
 #include "../security/crypto.h"
-#include "../packets/upload.h"
 #include "../packets/wrapper.h"
+#include "../packets/upload.h"
+#include "../packets/download.h"
+#include "../packets/list.h"
+#include "../packets/logout.h"
 #include "../tools/file.h"
-#include "download.h"
-#include "list.h"
-#include "rename.h"
-#include "delete.h"
+#include "../packets/rename.h"
+#include "../packets/delete.h"
 #include <filesystem>
 #include <signal.h>
 
@@ -133,7 +134,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         int certSize = BIO_pending(bio);
 
         // Resize the vector to fit the certificate
-        vector<unsigned char> certBuffer(certSize);
+        Buffer certBuffer(certSize);
         int readBytes = BIO_read(bio, certBuffer.data(), certSize);
         if (readBytes <= 0)
             return 0;
@@ -156,7 +157,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         // receive the client ECDH public key
         EVP_PKEY *deserializedClientKey;
-        std::vector<unsigned char> sClientKey;
+        Buffer sClientKey;
         size_t sClientKeyLength;
 
         if (!receiveEphemeralPublicKey(clientSocket, deserializedClientKey, sClientKey))
@@ -176,9 +177,8 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
 
-        // serialize the public key
-
-        std::vector<unsigned char> sServerKey;
+        // Serialize the public key
+        Buffer sServerKey;
 
         if (!serializePubKey(ECDH_Keys, sServerKey))
         {
@@ -188,7 +188,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         size_t sServerKeyLength = sServerKey.size();
 
         // calculate (g^a)^b
-        std::vector<unsigned char> sharedSecretKey;
+        Buffer sharedSecretKey;
         size_t sharedSecretLength;
         int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedClientKey, sharedSecretKey);
 
@@ -198,7 +198,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         }
         sharedSecretLength = sharedSecretKey.size();
         // generate session key Sha256((g^a)^b)
-        std::vector<unsigned char> digest;
+        Buffer digest;
         unsigned int digestlen;
 
         if (!computeSHA256Digest(sharedSecretKey, digest))
@@ -209,7 +209,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         digestlen = digest.size();
 
         // take first 128 of the the digest
-        std::vector<unsigned char> session_key;
+        Buffer session_key;
         if (!generateSessionKey(digest, session_key))
         {
             return 0;
@@ -217,7 +217,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         // concatinate (g^b,g^a)
         // Concatenate the serialized keys
-        vector<unsigned char> concatenatedKeys;
+        Buffer concatenatedKeys;
         int concatenatedkeysLength = sServerKeyLength + sClientKeyLength;
         concatenateKeys(sServerKey, sClientKey, concatenatedKeys);
 
@@ -239,7 +239,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         }
 
         // create the digiatl signature <(g^a,g^b)>s using the server private key
-        std::vector<unsigned char> signature;
+        Buffer signature;
 
         if (!generateDigitalSignature(concatenatedKeys, prvkey, signature))
         {
@@ -252,9 +252,9 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
         BIO_dump_fp(stdout, reinterpret_cast<const char *>(signature.data()), signatureLength);
 
         // encrypt  {<(g^a,g^b)>s}k  using the session key
-        std::vector<unsigned char> cipher_text;
+        Buffer cipher_text;
         int cipher_size;
-        std::vector<unsigned char> iv;
+        Buffer iv;
 
         if (!encryptTextAES(signature, session_key, cipher_text, iv))
         {
@@ -264,7 +264,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         // send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
 
-        vector<unsigned char> sendBuffer;
+        Buffer sendBuffer;
         if (!serializeLoginMessageFromTheServer(sServerKey, cipher_text, iv, sendBuffer))
         {
             return 0;
@@ -279,7 +279,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
 
         size_t receiveBufferSize = Encrypted_Signature_Size + CBC_IV_Length;
 
-        vector<unsigned char> receiveBuffer;
+        Buffer receiveBuffer;
         receiveBuffer.resize(receiveBufferSize);
 
         if (!receiveData(clientSocket, receiveBuffer, receiveBufferSize))
@@ -299,7 +299,7 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             return 0;
         }
         // decrypt  {<(g^a,g^b)>c}k  using the session key
-        vector<unsigned char> plaintext;
+        Buffer plaintext;
         int plaintextSize = 0;
         if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
         {
@@ -371,7 +371,6 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
                 ack_packet = UploadAck(1);
 
             Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
-            ack_wrapper.print();
 
             serialized_packet = ack_wrapper.serialize();
 
@@ -424,8 +423,8 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
                 m2_packet = UploadM2();
                 m2_packet.deserialize(m2_wrapper.getPayload());
 
-                file.writeChunk(m2_packet.getFileChunk());
-
+                if (!error_occured)
+                    file.writeChunk(m2_packet.getFileChunk());
                 // Log receival progess
                 cout << "[UPLOAD] Received " << (i + 1) * chunk_size << "B/ " << m1.file_size << "B" << endl;
             }
@@ -460,9 +459,12 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
                 m2_packet = UploadM2();
                 m2_packet.deserialize(m2_wrapper.getPayload());
 
-                file.writeChunk(m2_packet.getFileChunk());
+                if (!error_occured)
+                    file.writeChunk(m2_packet.getFileChunk());
             }
             cout << "[UPLOAD] Received " << m1.file_size << "B/ " << m1.file_size << "B" << endl;
+
+            // ----------------------------------------------------------------------------
 
             // -------------- HANDLE ACK PACKET ---------------------
 
@@ -501,47 +503,41 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             if (packet_counter != rcv_counter)
                 return false;
 
-            rcv_counter++; // TODO create a function for the increment counter
+            rcv_counter++;
 
             // Check if the file exists
-            string filename = (string)m1.file_name;
             string file_path = "../data/" + receivedUsername + "/" + (string)m1.file_name;
-
-            DownloadAck ack_packet;
             File file;
-            uintmax_t file_size;
+            bool file_error = false;
 
-            if (File::exists(file_path))
+            // Try to open the file denoted in path
+            try
             {
-                // open the file denoted in path
-                try
-                {
-                    file_size = filesystem::file_size(file_path);
-                    ack_packet = DownloadAck(0, file_size);
-                }
-                catch (const std::exception &e)
-                {
-                    std::cerr << "[DOWNLOAD] " << e.what() << std::endl;
-                    ack_packet = DownloadAck(1, 0); // error code : 1
-                    return 0;
-                }
+                file.read(file_path);
 
                 // check if file is not empty
-                if (file_size == 0)
+                if (file.getFileSize() == 0)
                 {
                     cerr << "[DOWNLOAD] Cannot download empty files!" << endl;
-                    ack_packet = DownloadAck(1, 0); // error code : 1
-                    return 0;
+                    file_error = true;
                 }
             }
-            else
+            catch (const std::exception &e)
             {
-                // file does not exist
-                ack_packet = DownloadAck(1, 0); // error code : 1
+                std::cerr << "[DOWNLOAD] " << e.what() << std::endl;
+                file_error = true;
             }
 
+            DownloadAck ack_packet;
+
+            if (!file_error)
+                ack_packet = DownloadAck(0, file.getFileSize());
+            else
+                ack_packet = DownloadAck(1);
+
             Wrapper ack_wrapper(session_key, send_counter, ack_packet.serialize());
-            ack_wrapper.print();
+
+            ack_wrapper.print(); // debug
 
             serialized_packet = ack_wrapper.serialize();
             if (!sendData(clientSocket, serialized_packet))
@@ -551,6 +547,47 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             }
 
             send_counter++;
+
+            // -------------- HANDLE SENDING FILE CHUNKS ---------------------
+            size_t chunk_size = MAX::max_file_chunk;
+            int num_file_chunks = file.getFileSize() / chunk_size;
+            int last_chunk_size = file.getFileSize() % chunk_size;
+            DownloadM2 m2_packet;
+            Wrapper m2_wrapper;
+
+            // Send chunks to client
+            for (int i = 0; i < num_file_chunks; i++)
+            {
+                m2_packet = DownloadM2(file.readChunk(chunk_size));
+
+                m2_wrapper = Wrapper(session_key, send_counter, m2_packet.serialize());
+
+                serialized_packet = m2_wrapper.serialize();
+                if (!sendData(clientSocket, serialized_packet))
+                    return false;
+
+                send_counter++;
+
+                // Log upload progess
+                cout << "[DOWNLOAD] Sent " << (i + 1) * chunk_size << "/" << file.getFileSize() << "Bytes" << endl;
+            }
+            // send remaining data in file (if there's any)
+            if (last_chunk_size != 0)
+            {
+                m2_packet = DownloadM2(file.readChunk(last_chunk_size));
+
+                Wrapper m2_wrapper(session_key, send_counter, m2_packet.serialize());
+
+                serialized_packet = m2_wrapper.serialize();
+                if (!sendData(clientSocket, serialized_packet))
+                    return false;
+
+                send_counter++;
+            }
+
+            cout << "[DOWNLOAD] Sent " << file.getFileSize() << "/" << file.getFileSize() << "Bytes" << endl;
+
+            // ----------------------------------------------------------------------------
         }
 
         // list routine
@@ -742,6 +779,23 @@ int handleClient(int clientSocket, const std::vector<std::string> &userNames)
             }
 
             send_counter++;
+        }
+
+        // Logout routine
+        if (RequestCodes::LOGOUT_REQ == command_code)
+        {
+
+            LogoutM1 m1;
+            m1.deserialize(payload);
+
+            // Check counter otherwise exit
+            if (packet_counter != rcv_counter)
+                return false;
+
+            rcv_counter++; // TODO create a function for the increment counter
+
+            // free hash and secret keys
+            clear_vec(session_key);
         }
 
         // Clean up

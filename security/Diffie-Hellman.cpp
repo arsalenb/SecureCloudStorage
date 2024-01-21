@@ -122,27 +122,6 @@ int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
     sKeyLength = BIO_get_mem_data(bio, &pointer); // exit on key length <=
     sKeyBuffer.insert(sKeyBuffer.begin(), pointer, pointer + sKeyLength);
 
-    std::vector<unsigned char>::iterator it;
-
-    std::cout << "Public key buffer contains:";
-    for (it = sKeyBuffer.begin(); it < sKeyBuffer.end(); it++)
-        std::cout << ' ' << *it;
-    std::cout << '\n';
-
-    // if (!sKeyBuffer)
-    // {
-    //     cerr << "[ECDH] malloc of the buffer for serialized key failed" << endl;
-    //     return 0;
-    // }
-
-    // // Read data from bio and extract serialized key
-    // int res = BIO_read(bio, sKeyBuffer, sKeyLength);
-    // if (res < 1)
-    // {
-    //     cerr << "[ECDH] BIO_read failed" << endl;
-    //     return 0;
-    // }
-
     // Cleanup
     BIO_free(bio);
 
@@ -169,10 +148,6 @@ EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
     std::vector<unsigned char>::iterator it;
 
     // Write serialized the key from the buffer in bio
-    std::cout << "my vector contains:";
-    for (it = sKeyBuffer.begin(); it < sKeyBuffer.end(); it++)
-        std::cout << ' ' << *it;
-    std::cout << '\n';
     ret = BIO_write(bio, sKeyBuffer.data(), sKeyBuffer.size());
     if (ret <= 0)
     {
@@ -242,12 +217,6 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, vector<unsigned cha
         EVP_PKEY_CTX_free(deriveCtx);
         return 0;
     }
-
-    std::vector<unsigned char>::iterator it;
-    std::cout << "shared secret:";
-    for (it = sharedKey.begin(); it < sharedKey.end(); it++)
-        printf("%02X", *it);
-    std::cout << '\n';
 
     EVP_PKEY_CTX_free(deriveCtx);
 

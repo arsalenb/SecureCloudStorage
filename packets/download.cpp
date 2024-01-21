@@ -58,6 +58,13 @@ void DownloadM1::print() const
 
 DownloadAck::DownloadAck() {}
 
+DownloadAck::DownloadAck(uint8_t ack_code)
+{
+    this->command_code = RequestCodes::DOWNLOAD_REQ;
+    this->file_size = 0;
+    this->ack_code = ack_code;
+}
+
 DownloadAck::DownloadAck(uint8_t ack_code, uint32_t file_size)
 {
     this->command_code = RequestCodes::DOWNLOAD_REQ;
@@ -124,35 +131,46 @@ void DownloadAck::print() const
     cout << "--------------------------------------------" << endl;
 }
 
-// ---------------------------------- DOWNLOAD M3 -----------------------------------
+// ---------------------------------- DOWNLOAD M2 -----------------------------------
 
-DownloadM3::DownloadM3(Buffer file_chunk)
+DownloadM2::DownloadM2(){};
+
+DownloadM2::DownloadM2(Buffer file_chunk)
 {
     command_code = RequestCodes::DOWNLOAD_CHUNK;
     this->file_chunk = file_chunk;
 }
 
-Buffer DownloadM3::serialize() const
+Buffer DownloadM2::serialize() const
 {
-    Buffer buff;
+    size_t chunk_size = file_chunk.size();
+    Buffer buff(DownloadM2::getSize(chunk_size));
 
-    buff.insert(buff.begin(), command_code);
-    buff.insert(buff.end(), file_chunk.data(), file_chunk.data() + file_chunk.size());
+    size_t position = 0;
+
+    memcpy(buff.data(), &command_code, sizeof(uint8_t));
+    position += sizeof(uint8_t);
+
+    memcpy(buff.data() + position, file_chunk.data(), chunk_size * sizeof(unsigned char));
+    position += chunk_size * sizeof(unsigned char);
 
     return buff;
 }
 
-void DownloadM3::deserialize(Buffer input)
+void DownloadM2::deserialize(Buffer input)
 {
+    size_t chunk_size = input.size() - sizeof(uint8_t);
+    this->file_chunk = Buffer(chunk_size);
+
     size_t position = 0;
 
     memcpy(&this->command_code, input.data(), sizeof(uint8_t));
     position += sizeof(uint8_t);
 
-    memcpy(&this->file_chunk, input.data() + position, input.size() - sizeof(uint8_t));
+    memcpy(this->file_chunk.data(), input.data() + position, chunk_size * sizeof(unsigned char));
 }
 
-size_t DownloadM3::getSize(size_t chunk_size)
+size_t DownloadM2::getSize(size_t chunk_size)
 {
     int size = 0;
 
@@ -162,12 +180,12 @@ size_t DownloadM3::getSize(size_t chunk_size)
     return size;
 }
 
-void DownloadM3::print() const
+void DownloadM2::print() const
 {
-    cout << "--------- DOWNLOAD M3 --------" << endl;
+    cout << "--------- DOWNLOAD M2 --------" << endl;
     cout << "File chunk: ";
     for (Buffer::const_iterator it = file_chunk.begin(); it < file_chunk.end(); ++it)
         printf("%02X", *it);
-    cout << "\n CHUNK SIZE: " << file_chunk.size() << endl;
+    cout << "\nCHUNK SIZE: " << file_chunk.size() << endl;
     cout << "------------------------------" << endl;
 }

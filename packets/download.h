@@ -22,6 +22,7 @@ private:
 
 public:
     char file_name[MAX::file_name + 1];
+
     DownloadM1();
     DownloadM1(string file_name);
     Buffer serialize() const;
@@ -41,27 +42,31 @@ private:
 
 public:
     DownloadAck();
+    DownloadAck(uint8_t ack_code);
     DownloadAck(uint8_t ack_code, uint32_t file_size);
     Buffer serialize() const;
     void deserialize(Buffer buffer);
     static int getSize();
     uint8_t getAckCode() { return ack_code; };
+    uint32_t getFileSize() { return file_size; };
     void print() const;
 };
 
-// ---------------------------------- DOWNLOAD M3 -----------------------------------
+// ---------------------------------- DOWNLOAD M2 -----------------------------------
 
-class DownloadM3
+class DownloadM2
 {
 private:
     uint8_t command_code;
     Buffer file_chunk;
 
 public:
-    DownloadM3(Buffer file_chunk);
+    DownloadM2();
+    DownloadM2(Buffer file_chunk);
     Buffer serialize() const;
     void deserialize(Buffer file_chunk);
     static size_t getSize(size_t chunk_size);
+    Buffer getFileChunk() { return file_chunk; }
     void print() const;
 };
 

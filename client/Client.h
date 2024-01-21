@@ -33,11 +33,12 @@ public:
     bool verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCert);
     void performClientJob();
     int upload_file();
-    void incrementCounter();
     int download_file();
     int list_files();
     int rename_file();
     int delete_file();
+    int logout();
+    void incrementCounter();
 
     ~Client();
 };

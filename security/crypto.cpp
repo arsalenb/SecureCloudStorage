@@ -169,11 +169,6 @@ bool generateSessionKey(Buffer &digest, Buffer &sessionKey)
     sessionKey.resize(sessionKeyLength);
     std::copy(digest.begin(), digest.begin() + sessionKeyLength, sessionKey.begin());
 
-    printf("Session key is:\n");
-    for (unsigned int n = 0; n < sessionKeyLength; n++)
-        printf("%02x", sessionKey[n]);
-    printf("\n");
-
     return true;
 };
 

@@ -15,6 +15,7 @@ namespace RequestCodes
     const size_t LIST_REQ = 5;
     const size_t RENAME_REQ = 6;
     const size_t DELETE_REQ = 7;
+    const size_t LOGOUT_REQ = 8;
 }
 
 namespace MAX

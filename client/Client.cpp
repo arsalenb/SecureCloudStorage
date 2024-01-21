@@ -16,10 +16,11 @@
 #include "../tools/file.h"
 #include "../packets/upload.h"
 #include "../packets/wrapper.h"
-#include "download.h"
-#include "list.h"
+#include "../packets/download.h"
+#include "../packets/list.h"
 #include "rename.h"
 #include "delete.h"
+#include "../packets/logout.h"
 
 using namespace std;
 Client::Client() {}
@@ -486,7 +487,7 @@ void Client::performClientJob()
 
     // end login phase
     // upload_file();
-    // download_file();
+    download_file();
     // list_files();
     // rename_file();
     delete_file();
@@ -503,11 +504,11 @@ int Client::upload_file()
 
     // Read file path from console
     std::cout << "Enter file path:" << endl;
-    std::string filePath;
-    std::getline(std::cin, filePath);
+    std::string file_path;
+    std::getline(std::cin, file_path);
 
     // make sure input was valid and non null
-    if (!cin || filePath.empty())
+    if (!cin || file_path.empty())
     {
         cerr << "[UPLOAD] Invalid file path input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
@@ -516,7 +517,7 @@ int Client::upload_file()
     // open the file denoted in path
     try
     {
-        file.read(filePath);
+        file.read(file_path);
         file.displayFileInfo();
         file_valid = true; // break out of loop
     }
@@ -667,14 +668,13 @@ int Client::upload_file()
 int Client::download_file()
 {
     bool file_valid = false;
-    File file;
 
     cout << "****************************************" << endl;
     cout << "*********     Download File    *********" << endl;
     cout << "****************************************" << endl;
 
     // Read file path from console
-    std::cout << "Enter file name:" << endl;
+    std::cout << "[Download] Enter file name:" << endl;
     std::string filename;
     std::getline(std::cin, filename);
 
@@ -689,12 +689,8 @@ int Client::download_file()
     // Create Download M1 type packet
     DownloadM1 m1(filename);
 
-    m1.print(); // debug
-    Buffer serializedPacket = m1.serialize();
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-
-    m1_wrapper.print(); // debug
+    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
 
     // serialize M1 Wrapper packet
     Buffer serialized_packet = m1_wrapper.serialize();
@@ -713,7 +709,7 @@ int Client::download_file()
     Buffer ack_buffer(Wrapper::getSize(DownloadAck::getSize()));
     if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
     {
-        std::cerr << "Error receiving  data" << std::endl;
+        std::cerr << "[Download] Error receiving data" << std::endl;
         return false;
     }
     // deserialize to extract payload in plaintext
@@ -721,7 +717,7 @@ int Client::download_file()
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
+        std::cerr << "[Download] Wrapper packet wasn't deserialized correctly!" << endl;
         return false;
     }
 
@@ -733,11 +729,122 @@ int Client::download_file()
     DownloadAck ack;
     ack.deserialize(wrapped_packet.getPayload());
 
-    if (ack.getAckCode() == 1)
+    if (ack.getAckCode())
     {
-        std::cerr << "[CLIENT] File doe not exist on the cloud!" << endl;
+        std::cerr << "[Download] File does not exist on the cloud!" << endl;
         return 0;
     }
+    uint32_t file_size = ack.getFileSize();
+
+    // -------------- HANDLE RECEIVING FILE CHUNKS ---------------------
+
+    File file;
+    size_t chunk_size = MAX::max_file_chunk;
+    int num_file_chunks = file_size / chunk_size;
+    int last_chunk_size = file_size % chunk_size;
+    DownloadM2 m2_packet;
+    Wrapper m2_wrapper;
+    bool error_occured = false;
+
+    // Create "downloads" folder if it doesn't exist
+    string downloads_path = "../downloads";
+    if (!(std::filesystem::exists(downloads_path) && std::filesystem::is_directory(downloads_path)))
+    {
+        if (!std::filesystem::create_directory(downloads_path))
+            return 0;
+    }
+
+    try
+    {
+        file.create(downloads_path + "/" + (string)filename);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "[DOWNLOAD] " << e.what() << std::endl;
+        error_occured = true;
+    }
+
+    // Receive chunks from server
+    for (int i = 0; i < num_file_chunks; i++)
+    {
+        // receive Wrapper packet message
+        Buffer message_buff(Wrapper::getSize(DownloadM2::getSize(chunk_size)));
+
+        if (!receiveData(clientSocket, message_buff, message_buff.size()))
+        {
+            std::cerr << "[Download] Error receiving data" << std::endl;
+            error_occured = true;
+            continue;
+        }
+
+        m2_wrapper = Wrapper(session_key);
+
+        if (!m2_wrapper.deserialize(message_buff))
+        {
+            std::cerr << "[Download] Wrapper packet wasn't deserialized correctly!" << endl;
+            error_occured = true;
+            continue;
+        }
+
+        // Check counter otherwise exit
+        if (m2_wrapper.getCounter() != rcv_counter)
+            return false;
+
+        rcv_counter++;
+
+        m2_packet = DownloadM2();
+        m2_packet.deserialize(m2_wrapper.getPayload());
+
+        if (!error_occured)
+            file.writeChunk(m2_packet.getFileChunk());
+
+        // Log receival progess
+        if (!error_occured)
+            cout << "[Download] Downloaded " << (i + 1) * chunk_size << "B/ " << file_size << "B" << endl;
+    }
+
+    // receive remaining data in file (if there's any)
+    if (last_chunk_size != 0)
+    {
+        Buffer message_buff(Wrapper::getSize(DownloadM2::getSize(last_chunk_size)));
+
+        if (!receiveData(clientSocket, message_buff, message_buff.size()))
+        {
+            std::cerr << "[Download] Error receiving  data" << std::endl;
+            error_occured = true;
+            return false;
+        }
+
+        m2_wrapper = Wrapper(session_key);
+
+        if (!m2_wrapper.deserialize(message_buff))
+        {
+            std::cerr << "[Download] Wrapper packet wasn't deserialized correctly!" << endl;
+            error_occured = true;
+            return false;
+        }
+
+        // Check counter otherwise exit
+        if (m2_wrapper.getCounter() != rcv_counter)
+            return false;
+
+        rcv_counter++;
+
+        m2_packet = DownloadM2();
+        m2_packet.deserialize(m2_wrapper.getPayload());
+
+        if (!error_occured)
+            file.writeChunk(m2_packet.getFileChunk());
+    }
+    if (!error_occured)
+        cout << "[Download] Downloaded " << file_size << "B/ " << file_size << "B" << endl;
+
+    // ----------------------------------------------------------------------------
+
+    if (error_occured)
+        std::cerr << "[Download] File wasn't downloaded correctly!" << endl;
+    else
+        cout << "[Download] File downloaded correctly! " << endl;
 
     return 1;
 }
@@ -1028,6 +1135,22 @@ int Client::delete_file()
         return 0;
     }
     return 0;
+}
+
+int Client::logout()
+{
+    LogoutM1 m1;
+
+    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
+
+    Buffer serialized_packet = m1_wrapper.serialize();
+
+    // Send wrapped packet to server
+    if (!sendData(clientSocket, serialized_packet))
+        return false;
+
+    clear_vec(serialized_packet);
+    incrementCounter(); // increment send counter
 }
 void Client::incrementCounter()
 {

@@ -311,7 +311,7 @@ bool receiveData(int socket, std::vector<unsigned char> &buffer, size_t bufferSi
 
         if (bytesRead <= 0)
         {
-            std::cerr << "Error receiving data " << std::endl;
+            std::cerr << "Error receiving data" << std::endl;
             return false;
         }
 
@@ -386,7 +386,7 @@ bool sendNumber(int socket, size_t number)
     {
         ssize_t bytesSent = send(socket, &number, sizeof(number), MSG_NOSIGNAL);
 
-               if (bytesSent != sizeof(number) || bytesSent == -1)
+        if (bytesSent != sizeof(number) || bytesSent == -1)
         {
 
             if (errno == EPIPE)
