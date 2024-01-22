@@ -18,27 +18,30 @@ class Client
 private:
     std::string username;
     std::string password;
-    int clientSocket;
+    int communcation_socket;
     Buffer session_key;
-    int send_counter = 0;
-    int rcv_counter = 0;
+    int s_counter = 0;
+    int r_counter = 0;
 
 public:
     Client();
+    int login();
+    int handleMenuChoice(const std::string &choice);
 
-    bool connectToServer();
-    bool sendUsername();
-    bool receiveServerResponse();
     bool receiveServerCertificate(X509 *&serverCert);
     bool verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCert);
-    void performClientJob();
+
+    // --------- Application Routines ---------
     int upload_file();
     int download_file();
     int list_files();
     int rename_file();
     int delete_file();
     int logout();
-    void incrementCounter();
+    // ----------------------------------------
+
+    // Start client application
+    int start();
 
     ~Client();
 };

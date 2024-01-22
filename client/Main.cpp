@@ -3,7 +3,7 @@
 int main()
 {
     Client client;
-    client.performClientJob();
+    client.start();
 
     return 0;
 }

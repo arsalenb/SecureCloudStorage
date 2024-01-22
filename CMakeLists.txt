@@ -12,13 +12,11 @@ include_directories(client server packets tools security)
 find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
-add_executable(${PROJECT_NAME} main.cpp security/Util.cpp security/Diffie-Hellman.cpp security/crypto.cpp packets/upload.h packets/constants.h packets/wrapper.h tools/file.cpp packets/list.h packets/rename.h tools/file.h)
-add_executable(Server server/server.cpp security/Util.cpp security/Diffie-Hellman.cpp security/crypto.cpp packets/constants.h packets/upload.cpp packets/wrapper.cpp tools/file.cpp packets/download.cpp packets/list.cpp packets/rename.cpp tools/file.cpp packets/delete.cpp)
-add_executable(Client client/Main.cpp  security/Util.cpp security/Diffie-Hellman.cpp security/crypto.cpp client/Client.cpp tools/file.cpp  packets/upload.cpp packets/wrapper.cpp packets/constants.h packets/download.cpp packets/list.cpp packets/rename.cpp tools/file.cpp packets/delete.cpp)
+add_executable(Server server/server.cpp server/worker.cpp security/Util.cpp security/Diffie-Hellman.cpp security/crypto.cpp packets/constants.h packets/upload.cpp packets/wrapper.cpp tools/file.cpp packets/download.cpp packets/list.cpp packets/rename.cpp tools/file.cpp packets/delete.cpp packets/logout.cpp)
+add_executable(Client client/Main.cpp  security/Util.cpp security/Diffie-Hellman.cpp security/crypto.cpp client/Client.cpp tools/file.cpp  packets/upload.cpp packets/wrapper.cpp packets/constants.h packets/download.cpp packets/list.cpp packets/rename.cpp tools/file.cpp packets/delete.cpp packets/logout.cpp)
 
 
 
-target_link_libraries(${PROJECT_NAME} PUBLIC OpenSSL::Crypto OpenSSL::SSL stdc++fs)
 target_link_libraries(Server PUBLIC OpenSSL::Crypto OpenSSL::SSL Threads::Threads stdc++fs)
 target_link_libraries(Client PUBLIC OpenSSL::Crypto OpenSSL::SSL Threads::Threads stdc++fs)
 

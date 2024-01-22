@@ -95,7 +95,6 @@ EVP_PKEY *ECDHKeyGeneration()
 /// @brief Serializes an ECDH public key to a memory buffer in PEM format.
 /// @param public_key EVP_PKEY object representing the public key to be serialized.
 /// @param sKeyBuffer A reference to the buffer where the serialized key will be stored.
-/// @param sKeyLength A reference to the size_t variable that will store the length of the serialized key.
 /// @return 1 on success, 0 on failure.
 int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
 {
@@ -130,12 +129,10 @@ int serializePubKey(EVP_PKEY *public_key, vector<unsigned char> &sKeyBuffer)
 
 /// @brief Deserializes an ECDH public key from a buffer
 /// @param sKeyBuffer Pointer to the buffer containing the serialized public key
-/// @param sKeyLength Length of the serialized public key buffer
 /// @return pointer to the deserialized public key (EVP_PKEY*) on success, or nullptr on failure
 EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
 {
     EVP_PKEY *pubKey;
-    int ret;
     BIO *bio;
 
     // Allocate an instance of the BIO structure for deserialization
@@ -145,11 +142,8 @@ EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
         cerr << "[ECDH] Failed to create BIO" << endl;
         return nullptr;
     }
-    std::vector<unsigned char>::iterator it;
 
-    // Write serialized the key from the buffer in bio
-    ret = BIO_write(bio, sKeyBuffer.data(), sKeyBuffer.size());
-    if (ret <= 0)
+    if (BIO_write(bio, sKeyBuffer.data(), sKeyBuffer.size()) <= 0)
     {
         cerr << "[ECDH] BIO_write failed" << endl;
         return nullptr;
@@ -170,8 +164,7 @@ EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
 /// @brief Function to derive a shared secret using Elliptic Curve Diffie-Hellman (ECDH)
 /// @param hostKey The ECDH public key of the host
 /// @param peerKey The ECDH public key of the peer
-/// @param sharedKey  a pointer that will hold the derived shared secret
-/// @param sharedKeyLength Reference to a size_t variable that will hold the length of the derived shared secret
+/// @param sharedKey  a buffer that will hold the derived shared secret
 /// @return 1 on success, 0 on failure
 int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, vector<unsigned char> &sharedKey)
 {
@@ -221,15 +214,4 @@ int deriveSharedSecret(EVP_PKEY *hostKey, EVP_PKEY *peerKey, vector<unsigned cha
     EVP_PKEY_CTX_free(deriveCtx);
 
     return 1;
-}
-
-// concatinate (g^b,g^a)
-void concatenateKeys(std::vector<unsigned char> &serializedServerKey,
-                     std::vector<unsigned char> &serializedClientKey,
-                     std::vector<unsigned char> &concatenatedKeys)
-{
-
-    // Copy the serialized keys into the concatenatedKeys vector using insert
-    concatenatedKeys.insert(concatenatedKeys.begin(), serializedServerKey.begin(), serializedServerKey.end());
-    concatenatedKeys.insert(concatenatedKeys.end(), serializedClientKey.begin(), serializedClientKey.end());
 }

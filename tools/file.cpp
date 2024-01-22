@@ -31,7 +31,7 @@ void File::read(const std::string &filePath)
         throw std::invalid_argument("Invalid file name.");
     }
 
-    input_fs.open(file_name, std::ios::binary);
+    input_fs.open(filePath, std::ios::binary);
 
     if (!input_fs)
     {

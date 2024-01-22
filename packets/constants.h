@@ -1,9 +1,17 @@
 #ifndef _CONSTANTS_H
 #define _CONSTANTS_H
-
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <openssl/evp.h>
+
+const std::array<std::string, 3> username_list = {"user1", "user2", "user3"};
+
+namespace ServerDetails
+{
+    const int PORT = 8080;
+    const std::string SERVER_IP = "127.0.0.1";
+}
 
 namespace RequestCodes
 {

@@ -23,349 +23,303 @@
 #include "../packets/logout.h"
 
 using namespace std;
+
+enum class MenuOption
+{
+    UploadFile = 1,
+    DownloadFile,
+    ListFiles,
+    RenameFile,
+    DeleteFile,
+    Logout
+};
+
 Client::Client() {}
 
-bool Client::connectToServer()
+int Client::login()
 {
-
     // Initialize members and create a socket
-    clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (clientSocket == -1)
+    communcation_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (communcation_socket == -1)
     {
-        std::cerr << "Error creating client socket" << std::endl;
+        std::cerr << "[LOGIN] Error creating client socket" << std::endl;
     }
 
     sockaddr_in serverAddr{};
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(PORT);
-    if (inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr) <= 0)
+    serverAddr.sin_port = htons(ServerDetails::PORT);
+    if (inet_pton(AF_INET, ServerDetails::SERVER_IP.c_str(), &serverAddr.sin_addr) <= 0)
     {
-        std::cerr << "Invalid address/Address not supported" << std::endl;
-        // Handle error
-        return false;
+        std::cerr << "[LOGIN] Invalid address/Address not supported" << std::endl;
+        return 0;
     }
 
-    if (connect(clientSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
+    if (connect(communcation_socket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
     {
-        std::cerr << "Error connecting to server" << std::endl;
-        // Handle error
-        close(clientSocket);
-        return false;
+        std::cerr << "[LOGIN] Error connecting to server" << std::endl;
+        return 0;
     }
 
-    return true;
-}
-
-bool Client::sendUsername()
-{
-    std::cout << "Enter your username (up to " + to_string(MAX::username_length) + " characters): ";
+    std::cout << "[LOGIN] Enter your username (up to " + to_string(MAX::username_length) + " characters): ";
     std::getline(std::cin, username);
 
     // make sure input was valid and non null
     if (!cin || username.empty() || username.length() > MAX::username_length)
     {
-        cerr << "[Login] Invalid username input" << endl;
-        std::cin.clear(); // put us back in 'normal' operation mode
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        return false;
+        cerr << "[LOGIN] Invalid username input" << endl;
+        return 0;
     }
 
     // Send username size to the server
     size_t usernameLength = username.size();
-    if (!sendNumber(clientSocket, usernameLength))
+    if (!sendSize(communcation_socket, usernameLength))
     {
-        std::cerr << "Error sending the username length" << std::endl;
-        return false;
+        std::cerr << "[LOGIN] Error sending the username length" << std::endl;
+        return 0;
     }
 
     // Convert the username string to a vector of unsigned char
-    std::vector<unsigned char> usernameData(username.begin(), username.end());
+    Buffer usernameData(username.begin(), username.end());
 
     // Call sendData with the username data
-    if (!sendData(clientSocket, usernameData))
+    if (!sendData(communcation_socket, usernameData))
     {
-        // Handle error if sendData fails
-        return false;
+        std::cerr << "[LOGIN] Error sending username to server" << std::endl;
+        return 0;
     }
-
-    return true;
-}
-
-bool Client::receiveServerResponse()
-{
-
     size_t server_response;
-    if (!receiveNumber(clientSocket, server_response))
+    if (!receiveSize(communcation_socket, server_response))
     {
         // Handle the error if receiving data fails
-        cerr << "Error receiving the response from server" << endl;
-        return false;
+        cerr << "[LOGIN] Error receiving the response from server" << endl;
+        return 0;
     }
-
-    std::cout << "Server response: " << server_response << std::endl;
 
     // Implement the logic to handle the server response
 
     if (server_response == 0)
     {
-        std::cerr << "User does not exist" << std::endl;
-        return false;
+        std::cerr << "[LOGIN] User does not exist" << std::endl;
+        return 0;
     }
     // User exists, read the password of private key of the user
 
     // Read password from console
-    std::cout << "Enter the password of the private key: " << endl;
+    std::cout << "[LOGIN] Enter the password of the private key: " << endl;
     std::getline(std::cin, password);
 
     // make sure input was valid and non null
     if (!cin || password.empty() || password.length() > MAX::passowrd_length)
     {
-        cerr << "[Login] Invalid password input" << endl;
-        std::cin.clear(); // put us back in 'normal' operation mode
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        return false;
+        cerr << "[LOGIN] Invalid password input" << endl;
+        return 0;
     }
     // read user private key
-    std::string privateKeyPath = "users/" + username + "/key.pem";
+    std::string privateKeyPath = "../commons/" + username + "/key.pem";
     EVP_PKEY *prvkey = nullptr;
 
     if (!loadPrivateKey(privateKeyPath, prvkey, password))
     {
-        cerr << "[Login] Invalid password for the private key" << endl;
-
-        return false;
+        std::cerr << "[LOGIN] Invalid password for the private key" << std::endl;
+        return 0;
     }
 
     // User exists, proceed to receive the server certificate
     X509 *serverCert = nullptr;
-    if (receiveServerCertificate(serverCert))
+    if (!receiveServerCertificate(serverCert))
     {
-        // Use the server certificate as needed
-        std::cout << "Received server certificate successfully" << std::endl;
-
-        const char *caCertFile = "Cloud Storage CA_cert.pem";
-        const char *crlFile = "Cloud Storage CA_crl.pem";
-        // Load CA certificate
-        X509 *caCert = nullptr;
-        FILE *caCertFilePtr = fopen(caCertFile, "r");
-        if (!caCertFilePtr)
-        {
-            perror("Error opening CA certificate file");
-            return 0;
-        }
-
-        caCert = PEM_read_X509(caCertFilePtr, nullptr, nullptr, nullptr);
-        fclose(caCertFilePtr);
-
-        if (!caCert)
-        {
-            ERR_print_errors_fp(stderr);
-            return 0;
-        }
-
-        // Load CRL
-        X509_CRL *crl = nullptr;
-        FILE *crlFilePtr = fopen(crlFile, "r");
-        if (!crlFilePtr)
-        {
-            perror("Error opening CRL file");
-            X509_free(caCert);
-            return 0;
-        }
-
-        crl = PEM_read_X509_CRL(crlFilePtr, nullptr, nullptr, nullptr);
-        fclose(crlFilePtr);
-
-        if (!crl)
-        {
-            ERR_print_errors_fp(stderr);
-            X509_free(caCert);
-            return 0;
-        }
-        bool verified = verifyServerCertificate(caCert, crl, serverCert);
-        if (verified)
-        {
-            std::cout << "Server certificate verification successful." << std::endl;
-        }
-        else
-        {
-            std::cerr << "Server certificate verification failed." << std::endl;
-            return 0;
-        }
-
-        // Generate the elliptic curve diffie-Hellman keys for the client
-        EVP_PKEY *ECDH_Keys;
-        if (!(ECDH_Keys = ECDHKeyGeneration()))
-        {
-            cerr << "[CLIENT] ECDH key generation failed" << endl;
-            return 0;
-        }
-
-        vector<unsigned char> sClientKey;
-
-        if (!serializePubKey(ECDH_Keys, sClientKey))
-        {
-            cerr << "[CLIENT] Serialization of public key failed" << endl;
-            return 0;
-        }
-
-        // Use the serialized key as needed
-
-        // Send the key size to the server
-        size_t sClientKeyLength = sClientKey.size();
-        if (!sendNumber(clientSocket, sClientKeyLength))
-        {
-            std::cerr << "Error sending the key size" << std::endl;
-            return false;
-        }
-        // send the DH public key to the server
-        if (!sendData(clientSocket, sClientKey))
-        {
-            return false;
-        }
-
-        // receive from the server: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
-
-        size_t receiveBufferSize = calLengthLoginMessageFromTheServer();
-        vector<unsigned char> receiveBuffer;
-        receiveBuffer.resize(receiveBufferSize);
-
-        if (!receiveData(clientSocket, receiveBuffer, receiveBufferSize))
-        {
-            std::cerr << "Error receiving certificate data" << std::endl;
-            return false;
-        }
-
-        // Variables to store the deserialized components (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
-        vector<unsigned char> sServerEphemeralKey;
-        int sServerEphemeralKeyLength = 0;
-        vector<unsigned char> cipher_text;
-        vector<unsigned char> iv;
-
-        // Call the deserialize function
-        if (!deserializeLoginMessageFromTheServer(receiveBuffer, sServerEphemeralKey, cipher_text, iv))
-        {
-            std::cerr << "Error deseiralizing the message" << std::endl;
-            return 0;
-        }
-        sServerEphemeralKeyLength = sServerEphemeralKey.size();
-        if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
-        {
-            cerr << "Key size exceeds the max size" << std::endl;
-            return 0;
-        }
-
-        EVP_PKEY *deserializedServerEphemeralKey = deserializePublicKey(sServerEphemeralKey);
-        if (deserializedServerEphemeralKey == NULL)
-        {
-            cerr << "Error receiving serializing data" << std::endl;
-            return 0;
-        }
-
-        // calculate (g^a)^b
-        vector<unsigned char> sharedSecretKey;
-        size_t sharedSecretLength;
-        int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedServerEphemeralKey, sharedSecretKey);
-
-        if (derivationResult == -1)
-        {
-            return 0;
-        }
-        sharedSecretLength = sharedSecretKey.size();
-        // generate session key Sha256((g^a)^b)
-        vector<unsigned char> digest;
-        unsigned int digestlen;
-
-        if (!computeSHA256Digest(sharedSecretKey, digest))
-        {
-            return 0;
-        }
-        digestlen = digest.size();
-
-        // take first 128 of the the digest
-        if (!generateSessionKey(digest, session_key))
-        {
-            return 0;
-        }
-
-        // concatinate (g^b,g^a)
-        // Concatenate the serialized keys
-
-        vector<unsigned char> concatenatedKeys;
-        int concatenatedkeysLength = sServerEphemeralKeyLength + sClientKeyLength;
-        concatenateKeys(sServerEphemeralKey, sClientKey, concatenatedKeys);
-
-        printf("Concatenated keys:\n");
-        for (const auto &ch : concatenatedKeys)
-        {
-            printf("%02x", ch); // Assuming you want to print hexadecimal values
-        }
-        printf("\n");
-
-        // Now concatenatedKeys contains the serialized form of both keys
-
-        // decrypt  {<(g^a,g^b)>s}k  using the session key
-        vector<unsigned char> plaintext;
-        int plaintextSize = 0;
-        if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
-        {
-            return 0;
-        }
-        plaintextSize = plaintext.size();
-
-        // verify the <(g^a,g^b)>s
-        EVP_PKEY *server_public_key = X509_get_pubkey(serverCert);
-
-        if (!verifyDigitalSignature(concatenatedKeys, plaintext, server_public_key))
-        {
-            return 0;
-        }
-
-        // create the digiatl signature <(g^a,g^b)>c using the client private key
-        vector<unsigned char> signature;
-
-        if (!generateDigitalSignature(concatenatedKeys, prvkey, signature))
-        {
-            return 0;
-        }
-        unsigned int signatureLength = signature.size();
-        EVP_PKEY_free(prvkey);
-
-        // encrypt  {<(g^a,g^b)>c}k  using the session key
-        cipher_text.clear();
-        int cipher_size;
-        iv.clear();
-
-        if (!encryptTextAES(signature, session_key, cipher_text, iv))
-        {
-            return 0;
-        }
-        cipher_size = cipher_text.size();
-
-        //  send to the server: {<(g^a,g^b)>c}k, IV
-        vector<unsigned char> sendBuffer;
-        if (!serializeLoginMessageFromTheClient(cipher_text, iv, sendBuffer))
-        {
-            return 0;
-        }
-        if (!sendData(clientSocket, sendBuffer))
-        {
-            // Handle error if sendData fails
-            return false;
-        }
-
-        // Cleanup OpenSSL (if not done already)
-        EVP_cleanup();
-
-        // Clean up
-        X509_free(serverCert);
-    }
-    else
-    {
-        std::cerr << "Error receiving server certificate" << std::endl;
+        std::cerr << "[LOGIN] Error receiving server certificate" << std::endl;
+        return 0;
     }
 
-    return true;
+    const char *caCertFile = "../commons/Cloud Storage CA_cert.pem";
+    const char *crlFile = "../commons/Cloud Storage CA_crl.pem";
+    // Load CA certificate
+    X509 *caCert = nullptr;
+    FILE *caCertFilePtr = fopen(caCertFile, "r");
+    if (!caCertFilePtr)
+    {
+        std::cerr << "[LOGIN] Error opening CA certificate file" << std::endl;
+        return 0;
+    }
+
+    caCert = PEM_read_X509(caCertFilePtr, nullptr, nullptr, nullptr);
+    fclose(caCertFilePtr);
+    if (!caCert)
+    {
+        std::cerr << "[LOGIN] Error reading CA certificate file" << std::endl;
+        return 0;
+    }
+
+    // Load CRL
+    X509_CRL *crl = nullptr;
+    FILE *crlFilePtr = fopen(crlFile, "r");
+    if (!crlFilePtr)
+    {
+        std::cerr << "[LOGIN] Error opening CLR  file" << std::endl;
+        return 0;
+    }
+
+    crl = PEM_read_X509_CRL(crlFilePtr, nullptr, nullptr, nullptr);
+    fclose(crlFilePtr);
+
+    if (!crl)
+    {
+        std::cerr << "[LOGIN] Error reading CLR  file" << std::endl;
+        return 0;
+    }
+    bool verified = verifyServerCertificate(caCert, crl, serverCert);
+    if (!verified)
+    {
+        std::cerr << "[LOGIN] Server certificate verification failed." << std::endl;
+        return 0;
+    }
+    // Generate the elliptic curve diffie-Hellman keys for the client
+    EVP_PKEY *ECDH_Keys;
+    if (!(ECDH_Keys = ECDHKeyGeneration()))
+    {
+        cerr << "[LOGIN] ECDH key generation failed" << endl;
+        return 0;
+    }
+
+    Buffer sClientKey;
+
+    if (!serializePubKey(ECDH_Keys, sClientKey))
+    {
+        cerr << "[LOGIN] Serialization of public key failed" << endl;
+        return 0;
+    }
+
+    // Send the key size to the server
+    size_t sClientKeyLength = sClientKey.size();
+    if (!sendSize(communcation_socket, sClientKeyLength))
+    {
+        std::cerr << "[LOGIN] Error sending the client public key size to server" << std::endl;
+        return 0;
+    }
+    // send the DH public key to the server
+    if (!sendData(communcation_socket, sClientKey))
+    {
+        std::cerr << "[LOGIN] Error sending the client public key to server" << std::endl;
+        return 0;
+    }
+
+    // receive from the server: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
+
+    size_t receiveBufferSize = calLengthLoginMessageFromTheServer();
+    Buffer receiveBuffer;
+    receiveBuffer.resize(receiveBufferSize);
+
+    if (!receiveData(communcation_socket, receiveBuffer))
+    {
+        std::cerr << "[LOGIN] Error receiving [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV] data from the server" << std::endl;
+        return 0;
+    }
+
+    // Variables to store the deserialized components (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
+    Buffer sServerEphemeralKey;
+    int sServerEphemeralKeyLength = 0;
+    Buffer cipher_text;
+    Buffer iv;
+
+    // Call the deserialize function
+    if (!deserializeLoginMessageFromTheServer(receiveBuffer, sServerEphemeralKey, cipher_text, iv))
+    {
+        std::cerr << "[LOGIN] Error deseiralizing [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV] " << std::endl;
+        return 0;
+    }
+    sServerEphemeralKeyLength = sServerEphemeralKey.size();
+    if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
+    {
+        cerr << "[LOGIN] Ephemeral key size exceeds the max size" << std::endl;
+        return 0;
+    }
+
+    EVP_PKEY *deserializedServerEphemeralKey = deserializePublicKey(sServerEphemeralKey);
+    if (deserializedServerEphemeralKey == NULL)
+    {
+        cerr << "[LOGIN] Error deseiralizing the seerver ephemeral key" << std::endl;
+        return 0;
+    }
+
+    // calculate (g^a)^b
+    Buffer sharedSecretKey;
+    size_t sharedSecretLength;
+    int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedServerEphemeralKey, sharedSecretKey);
+
+    if (derivationResult == -1)
+    {
+        std::cerr << "[LOGIN] Key derivation was unsuccessfull" << std::endl;
+        return 0;
+    }
+    sharedSecretLength = sharedSecretKey.size();
+    // generate session key Sha256((g^a)^b)
+    Buffer digest;
+
+    if (!computeSHA256Digest(sharedSecretKey, digest))
+    {
+        std::cerr << "[LOGIN] Shared secret derivation failed" << std::endl;
+        return 0;
+    }
+    // take first 128 of the the digest
+    generateSessionKey(digest, session_key);
+
+    // Concatinate (g^b,g^a), the serialized keys
+    Buffer concatenatedKeys;
+    concatenatedKeys.insert(concatenatedKeys.begin(), sServerEphemeralKey.begin(), sServerEphemeralKey.end());
+    concatenatedKeys.insert(concatenatedKeys.end(), sClientKey.begin(), sClientKey.end());
+
+    // decrypt  {<(g^a,g^b)>s}k  using the session key
+    Buffer plaintext;
+    if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
+    {
+        std::cerr << "[LOGIN] Error decrypting {<(g^a,g^b)>c}k" << std::endl;
+        return 0;
+    }
+    // verify the <(g^a,g^b)>s
+    EVP_PKEY *server_public_key = X509_get_pubkey(serverCert);
+    if (!verifyDigitalSignature(concatenatedKeys, plaintext, server_public_key))
+    {
+        std::cerr << "[LOGIN] Failed to verify digital signature" << std::endl;
+        return 0;
+    }
+    // create the digiatl signature <(g^a,g^b)>c using the client private key
+    Buffer signature;
+    if (!generateDigitalSignature(concatenatedKeys, prvkey, signature))
+    {
+        std::cerr << "[LOGIN] Creating Digital Signature failed" << std::endl;
+        return 0;
+    }
+    EVP_PKEY_free(prvkey);
+    // encrypt  {<(g^a,g^b)>c}k  using the session key
+    cipher_text.clear();
+    int cipher_size;
+    iv.clear();
+    if (!encryptTextAES(signature, session_key, cipher_text, iv))
+    {
+        std::cerr << "[LOGIN] Encrypting Digital Signature failed" << std::endl;
+        return 0;
+    }
+    //  send to the server: {<(g^a,g^b)>c}k, IV
+    Buffer sendBuffer;
+    if (!serializeLoginMessageFromTheClient(cipher_text, iv, sendBuffer))
+    {
+        std::cerr << "[LOGIN] Error serializing [{<(g^a,g^b)>c}k, IV] " << std::endl;
+        return 0;
+    }
+    if (!sendData(communcation_socket, sendBuffer))
+    {
+        std::cerr << "[LOGIN] Error sending [{<(g^a,g^b)>c}k, IV] to the server" << std::endl;
+        return 0;
+    }
+
+    // Cleanup OpenSSL (if not done already)
+    EVP_cleanup();
+
+    // Clean up
+    X509_free(serverCert);
+
+    return 1;
 }
 
 bool Client::receiveServerCertificate(X509 *&serverCert)
@@ -374,7 +328,7 @@ bool Client::receiveServerCertificate(X509 *&serverCert)
 
     // Receive the certificate size
     size_t certSize;
-    if (!receiveNumber(clientSocket, certSize))
+    if (!receiveSize(communcation_socket, certSize))
     {
         // Handle the error if receiving data fails
         return false;
@@ -386,15 +340,12 @@ bool Client::receiveServerCertificate(X509 *&serverCert)
     }
 
     // Receive the certificate data
-    vector<unsigned char> certBuffer(certSize);
-    if (!receiveData(clientSocket, certBuffer, certSize))
+    Buffer certBuffer(certSize);
+    if (!receiveData(communcation_socket, certBuffer))
     {
         std::cerr << "Error receiving certificate data" << std::endl;
         return false;
     }
-    std::cout << "Certificate Buffer: ";
-    for (char i : certBuffer)
-        std::cout << i << ' ';
 
     // Create a BIO from the received data
     BIO *bio = BIO_new_mem_buf(certBuffer.data(), certSize);
@@ -410,27 +361,15 @@ bool Client::receiveServerCertificate(X509 *&serverCert)
     if (!serverCert)
     {
         std::cerr << "Error reading X509 certificate from BIO" << std::endl;
-
         ERR_print_errors_fp(stderr); // Print OpenSSL error information
         BIO_free(bio);
-
         return false;
     }
-
-    // Print serial number
-    ASN1_INTEGER *serialNumber = X509_get_serialNumber(serverCert);
-    BIGNUM *bnSerial = ASN1_INTEGER_to_BN(serialNumber, nullptr);
-    char *serialHex = BN_bn2hex(bnSerial);
-
-    cout << "Serial Number: " << serialHex << endl;
-    OPENSSL_free(serialHex);
-    BN_free(bnSerial);
     // Clean up
     BIO_free(bio);
 
     return true;
 }
-
 bool Client::verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCert)
 {
 
@@ -450,12 +389,8 @@ bool Client::verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCe
     int ret = X509_verify_cert(ctx);
     if (ret != 1)
     {
-        fprintf(stderr, "Certificate verification failed\n");
+        std::cerr << "Certificate verification failed" << std::endl;
         ERR_print_errors_fp(stderr);
-    }
-    else
-    {
-        printf("Certificate verification succeeded\n");
     }
 
     // Clean up
@@ -467,32 +402,45 @@ bool Client::verifyServerCertificate(X509 *caCert, X509_CRL *crl, X509 *serverCe
 
     return ret == 1;
 }
-
-void Client::performClientJob()
+int Client::start()
 {
-    int rcv_counter = 0;
 
-    if (!connectToServer())
+    const int LogoutOption = static_cast<int>(MenuOption::Logout);
+
+    if (!login())
     {
-        return;
-    }
-    if (!sendUsername())
-    {
-        return;
-    }
-    if (!receiveServerResponse())
-    {
-        return;
+        std::cerr << "[CLIENT] Login failed" << std::endl;
+        return 0;
     }
 
-    // end login phase
-    // upload_file();
-    download_file();
-    // list_files();
-    // rename_file();
-    delete_file();
+    std::string choice;
+    int result;
+
+    do
+    {
+        // Display menu
+        std::cout << "Choose an option:" << std::endl;
+        std::cout << "1. Upload file\n2. Download file\n3. List files\n"
+                     "4. Rename file\n5. Delete file\n6. Logout\n";
+
+        // Get user input
+        std::cout << "[CLIENT] Enter your choice: ";
+        std::getline(std::cin, choice);
+
+        // Handle menu choice
+        result = handleMenuChoice(choice);
+
+        if (result == -1)
+        {
+            std::cerr << "[WORKER] Exiting .... Replay Attack or Counter reached maximum value" << std::endl;
+            // Close any necessary resources (e.g., communication_socket)
+            exit(EXIT_FAILURE);
+        }
+
+    } while (std::stoi(choice) != LogoutOption);
+
+    return 0;
 }
-
 int Client::upload_file()
 {
     bool file_valid = false;
@@ -503,7 +451,7 @@ int Client::upload_file()
     cout << "****************************************" << endl;
 
     // Read file path from console
-    std::cout << "Enter file path:" << endl;
+    std::cout << "[UPLOAD] Enter file path:" << endl;
     std::string file_path;
     std::getline(std::cin, file_path);
 
@@ -543,50 +491,58 @@ int Client::upload_file()
 
     // Create Upload M1 type packet
     UploadM1 m1(file.get_file_name(), file.getFileSize());
-
-    m1.print();
     Buffer serializedPacket = m1.serialize();
-
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-    m1_wrapper.print(); // debug
-
+    Wrapper m1_wrapper(session_key, s_counter, serializedPacket);
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // Send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
-        return false;
+    if (!sendData(communcation_socket, serialized_packet))
+    {
+        std::cerr << "[UPLOAD] Error sending the serialized packet" << std::endl;
+        return 0;
+    }
 
     clear_vec(serialized_packet);
-    incrementCounter(); // increment send counter
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer ack_buffer(Wrapper::getSize(UploadAck::getSize()));
-    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    if (!receiveData(communcation_socket, ack_buffer))
     {
-        std::cerr << "Error receiving  data" << std::endl;
-        return false;
+        std::cerr << "[UPLOAD] Error receiving  data" << std::endl;
+        return 0;
     }
     // deserialize to extract payload in plaintext
     Wrapper wrapped_packet(session_key);
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[UPLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
 
-    rcv_counter++;
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     UploadAck ack;
     ack.deserialize(wrapped_packet.getPayload());
 
     if (!ack.getAckCode())
     {
-        std::cerr << "[CLIENT] File already exists on the cloud!" << endl;
+        std::cerr << "[UPLOAD] File already exists on the cloud!" << endl;
         return 0;
     }
 
@@ -602,13 +558,21 @@ int Client::upload_file()
     {
         m2_packet = UploadM2(file.readChunk(chunk_size));
 
-        m2_wrapper = Wrapper(session_key, send_counter, m2_packet.serialize());
+        m2_wrapper = Wrapper(session_key, s_counter, m2_packet.serialize());
 
         serialized_packet = m2_wrapper.serialize();
-        if (!sendData(clientSocket, serialized_packet))
-            return false;
+        if (!sendData(communcation_socket, serialized_packet))
+        {
+            std::cerr << "[UPLOAD] Error sending the serialized packet" << std::endl;
+            return 0;
+        }
 
-        incrementCounter();
+        s_counter = incrementCounter(s_counter);
+        if (s_counter == -1)
+        {
+            std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+            return -1;
+        }
 
         // Log upload progess
         cout << "[UPLOAD] Uploaded " << (i + 1) * chunk_size << "/" << file.getFileSize() << "Bytes" << endl;
@@ -618,20 +582,28 @@ int Client::upload_file()
     {
         m2_packet = UploadM2(file.readChunk(last_chunk_size));
 
-        Wrapper m2_wrapper(session_key, send_counter, m2_packet.serialize());
+        Wrapper m2_wrapper(session_key, s_counter, m2_packet.serialize());
 
         serialized_packet = m2_wrapper.serialize();
-        if (!sendData(clientSocket, serialized_packet))
-            return false;
+        if (!sendData(communcation_socket, serialized_packet))
+        {
+            std::cerr << "[UPLOAD] Error sending the serialized packet" << std::endl;
+            return 0;
+        }
 
-        incrementCounter();
+        s_counter = incrementCounter(s_counter);
+        if (s_counter == -1)
+        {
+            std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+            return -1;
+        }
     }
 
     cout << "[UPLOAD] Uploaded " << file.getFileSize() << "/" << file.getFileSize() << "Bytes" << endl;
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer final_ack_buffer(Wrapper::getSize(UploadAck::getSize()));
-    if (!receiveData(clientSocket, final_ack_buffer, final_ack_buffer.size()))
+    if (!receiveData(communcation_socket, final_ack_buffer))
     {
         std::cerr << "Error receiving data" << std::endl;
         return false;
@@ -642,29 +614,32 @@ int Client::upload_file()
     if (!wrapped_packet.deserialize(final_ack_buffer))
     {
         std::cerr << "[UPLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
 
-    rcv_counter++;
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     ack = UploadAck();
     ack.deserialize(wrapped_packet.getPayload());
 
     if (!ack.getAckCode())
-    {
-        std::cerr << "[CLIENT] Uploading file " << file.get_file_name() << " has failed!" << endl;
-        return 0;
-    }
+        std::cerr << "[UPLOAD] Uploading file " << file.get_file_name() << " has failed!" << std::endl;
     else
-    {
-        cout << "[CLIENT] " << file.get_file_name() << " uploaded successfully" << endl;
-        return 1;
-    }
-}
+        std::cout << "[UPLOAD] " << file.get_file_name() << " uploaded successfully" << std::endl;
 
+    cout << "********************************************" << endl;
+    cout << "*********     End Upload File    *********" << endl;
+    cout << "********************************************" << endl;
+    return 1;
+}
 int Client::download_file()
 {
     bool file_valid = false;
@@ -690,41 +665,51 @@ int Client::download_file()
     DownloadM1 m1(filename);
 
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
+    Wrapper m1_wrapper(session_key, s_counter, m1.serialize());
 
     // serialize M1 Wrapper packet
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
+    if (!sendData(communcation_socket, serialized_packet))
     {
         return false;
     }
     clear_vec(serialized_packet);
 
     // increment counter
-    incrementCounter();
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[DOWNLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer ack_buffer(Wrapper::getSize(DownloadAck::getSize()));
-    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    if (!receiveData(communcation_socket, ack_buffer))
     {
         std::cerr << "[Download] Error receiving data" << std::endl;
-        return false;
+        return 0;
     }
     // deserialize to extract payload in plaintext
     Wrapper wrapped_packet(session_key);
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[Download] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[DOWNLOAD] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
 
-    rcv_counter++;
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[DOWNLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     DownloadAck ack;
     ack.deserialize(wrapped_packet.getPayload());
@@ -770,7 +755,7 @@ int Client::download_file()
         // receive Wrapper packet message
         Buffer message_buff(Wrapper::getSize(DownloadM2::getSize(chunk_size)));
 
-        if (!receiveData(clientSocket, message_buff, message_buff.size()))
+        if (!receiveData(communcation_socket, message_buff))
         {
             std::cerr << "[Download] Error receiving data" << std::endl;
             error_occured = true;
@@ -787,10 +772,15 @@ int Client::download_file()
         }
 
         // Check counter otherwise exit
-        if (m2_wrapper.getCounter() != rcv_counter)
-            return false;
+        if (m2_wrapper.getCounter() != r_counter)
+            return -1;
 
-        rcv_counter++;
+        r_counter = incrementCounter(r_counter);
+        if (r_counter == -1)
+        {
+            std::cerr << "[DOWNLOAD] Counter reached maximum value" << std::endl;
+            return -1;
+        }
 
         m2_packet = DownloadM2();
         m2_packet.deserialize(m2_wrapper.getPayload());
@@ -808,11 +798,11 @@ int Client::download_file()
     {
         Buffer message_buff(Wrapper::getSize(DownloadM2::getSize(last_chunk_size)));
 
-        if (!receiveData(clientSocket, message_buff, message_buff.size()))
+        if (!receiveData(communcation_socket, message_buff))
         {
             std::cerr << "[Download] Error receiving  data" << std::endl;
             error_occured = true;
-            return false;
+            return 0;
         }
 
         m2_wrapper = Wrapper(session_key);
@@ -821,14 +811,19 @@ int Client::download_file()
         {
             std::cerr << "[Download] Wrapper packet wasn't deserialized correctly!" << endl;
             error_occured = true;
-            return false;
+            return 0;
         }
 
         // Check counter otherwise exit
-        if (m2_wrapper.getCounter() != rcv_counter)
-            return false;
+        if (m2_wrapper.getCounter() != r_counter)
+            return -1;
 
-        rcv_counter++;
+        r_counter = incrementCounter(r_counter);
+        if (r_counter == -1)
+        {
+            std::cerr << "[DOWNLOAD] Counter reached maximum value" << std::endl;
+            return -1;
+        }
 
         m2_packet = DownloadM2();
         m2_packet.deserialize(m2_wrapper.getPayload());
@@ -846,9 +841,11 @@ int Client::download_file()
     else
         cout << "[Download] File downloaded correctly! " << endl;
 
+    cout << "********************************************" << endl;
+    cout << "*********     End Download File    *********" << endl;
+    cout << "********************************************" << endl;
     return 1;
 }
-
 int Client::list_files()
 {
     bool file_valid = false;
@@ -863,50 +860,60 @@ int Client::list_files()
 
     Buffer serializedPacket = m1.serialize();
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-
-    m1_wrapper.print(); // debug
+    Wrapper m1_wrapper(session_key, s_counter, serializedPacket);
 
     // serialize M1 Wrapper packet
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
+    if (!sendData(communcation_socket, serialized_packet))
     {
-        return false;
+        std::cerr << "[LIST] Error sending data to the server" << std::endl;
+        return 0;
     }
     clear_vec(serialized_packet);
 
     // increment counter
-    incrementCounter();
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[LIST] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer ack_buffer(Wrapper::getSize(ListM2::getSize()));
-    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    if (!receiveData(communcation_socket, ack_buffer))
     {
-        std::cerr << "Error receiving  data" << std::endl;
-        return false;
+        std::cerr << "[LIST] Error receiving  data" << std::endl;
+        return 0;
     }
     // deserialize to extract payload in plaintext
     Wrapper wrapped_packet(session_key);
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[LIST] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
 
-    rcv_counter++;
+    // increment counter
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[LIST] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     ListM2 ack_size_packet;
     ack_size_packet.deserialize(wrapped_packet.getPayload());
 
     if (ack_size_packet.getAckCode() == 1)
     {
-        std::cerr << "[CLIENT] Folder doe not exist on the cloud!" << endl;
+        std::cerr << "[LIST] Folder doe not exist on the cloud!" << endl;
         return 0;
     }
 
@@ -917,10 +924,10 @@ int Client::list_files()
     ListM3 m3(file_list_size);
 
     Buffer list_buffer(Wrapper::getSize(m3.getSize()));
-    if (!receiveData(clientSocket, list_buffer, list_buffer.size()))
+    if (!receiveData(communcation_socket, list_buffer))
     {
-        std::cerr << "Error receiving  data" << std::endl;
-        return false;
+        std::cerr << "[LIST] Error receiving data" << std::endl;
+        return 0;
     }
 
     // deserialize to extract payload in plaintext
@@ -928,17 +935,15 @@ int Client::list_files()
 
     if (!m3_wrapper.deserialize(list_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[LIST] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (m3_wrapper.getCounter() != rcv_counter)
-        return 0;
+    if (m3_wrapper.getCounter() != r_counter)
+        return -1;
 
     m3.deserialize(m3_wrapper.getPayload());
     std::string fileListData = m3.getFileListData();
-
-    rcv_counter++;
 
     // print the file names
     std::istringstream ss(fileListData);
@@ -953,9 +958,19 @@ int Client::list_files()
         std::cout << token << std::endl;
     }
 
+    // incrment the counter
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[LIST] Counter reached maximum value" << std::endl;
+        return -1;
+    }
+    cout << "****************************************" << endl;
+    cout << "*********     End List Files    *********" << endl;
+    cout << "****************************************" << endl;
+
     return 1;
 }
-
 int Client::rename_file()
 {
     bool file_valid = false;
@@ -966,7 +981,7 @@ int Client::rename_file()
     cout << "****************************************" << endl;
 
     // Read file name from console
-    std::cout << "Enter file name:" << endl;
+    std::cout << "[RENAME] Enter file name:" << endl;
     std::string file_name;
     std::getline(std::cin, file_name);
 
@@ -980,14 +995,14 @@ int Client::rename_file()
     }
 
     // Read file name from console
-    std::cout << "Enter new file name:" << endl;
+    std::cout << "[RENAME] Enter new file name:" << endl;
     std::string new_file_name;
     std::getline(std::cin, new_file_name);
 
     // make sure input was valid and non null
     if (!cin || new_file_name.empty())
     {
-        cerr << "[RENAME] Invalid new file name input" << endl;
+        std::cerr << "[RENAME] Invalid new file name input" << std::endl;
         std::cin.clear(); // put us back in 'normal' operation mode
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         return 0;
@@ -996,62 +1011,79 @@ int Client::rename_file()
     // Create Rename M1 type packet
     RenameM1 m1(file_name, new_file_name);
 
-    m1.print();
     Buffer serializedPacket = m1.serialize();
 
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-    m1_wrapper.print(); // debug
+    Wrapper m1_wrapper(session_key, s_counter, serializedPacket);
 
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // Send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
-        return false;
+    if (!sendData(communcation_socket, serialized_packet))
+    {
+        std::cerr << "[RENAME] Error sending data" << std::endl;
+        return 0;
+    }
 
     clear_vec(serialized_packet);
-    incrementCounter(); // increment send counter
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[RENAME] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer ack_buffer(Wrapper::getSize(RenameAck::getSize()));
-    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    if (!receiveData(communcation_socket, ack_buffer))
     {
-        std::cerr << "Error receiving  data" << std::endl;
-        return false;
+        std::cerr << "[RENAME] Error receiving  data" << std::endl;
+        return 0;
     }
     // deserialize to extract payload in plaintext
     Wrapper wrapped_packet(session_key);
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[RENAME] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+    {
+        return -1;
+    }
 
-    rcv_counter++;
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[RENAME] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     RenameAck ack;
     ack.deserialize(wrapped_packet.getPayload());
 
     if (ack.getAckCode() == 0)
     {
-        std::cout << "[CLIENT] File renamed successfully on the cloud!" << endl;
+        std::cout << "[RENAME] File renamed successfully on the cloud!" << endl;
         return 1;
     }
     else if (ack.getAckCode() == 1)
     {
-        std::cerr << "[CLIENT] File rename failed on the cloud!" << endl;
+        std::cerr << "[RENAME] File rename failed on the cloud!" << endl;
         return 0;
     }
     if (ack.getAckCode() == 2)
     {
-        std::cerr << "[CLIENT] File does not exist on the cloud!" << endl;
+        std::cerr << "[RENAME] File does not exist on the cloud!" << endl;
         return 0;
     }
-    return 0;
+    cout << "****************************************" << endl;
+    cout << "********     End Rename File    ********" << endl;
+    cout << "****************************************" << endl;
+
+    return 1;
 }
 int Client::delete_file()
 {
@@ -1063,14 +1095,14 @@ int Client::delete_file()
     cout << "****************************************" << endl;
 
     // Read file name from console
-    std::cout << "Enter file name:" << endl;
+    std::cout << "[DELETE] Enter file name:" << endl;
     std::string file_name;
     std::getline(std::cin, file_name);
 
     // make sure input was valid and non null
     if (!cin || file_name.empty())
     {
-        cerr << "[Delete] Invalid file name input" << endl;
+        cerr << "[DELETE] Invalid file name input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         return 0;
@@ -1083,50 +1115,61 @@ int Client::delete_file()
     Buffer serializedPacket = m1.serialize();
 
     // Create on the M1 message the wrapper packet to be sent
-    Wrapper m1_wrapper(session_key, send_counter, serializedPacket);
-    m1_wrapper.print(); // debug
-
+    Wrapper m1_wrapper(session_key, s_counter, serializedPacket);
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // Send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
-        return false;
+    if (!sendData(communcation_socket, serialized_packet))
+    {
+        std::cerr << "[DELETE] Error sending the result to the server" << std::endl;
+        return 0;
+    }
 
     clear_vec(serialized_packet);
-    incrementCounter(); // increment send counter
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[DELETE] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     // -------------- HANDLE ACK PACKET ---------------------
     Buffer ack_buffer(Wrapper::getSize(DeleteAck::getSize()));
-    if (!receiveData(clientSocket, ack_buffer, ack_buffer.size()))
+    if (!receiveData(communcation_socket, ack_buffer))
     {
-        std::cerr << "Error receiving  data" << std::endl;
-        return false;
+        std::cerr << "[DELETE] Error receiving  data" << std::endl;
+        return 0;
     }
     // deserialize to extract payload in plaintext
     Wrapper wrapped_packet(session_key);
 
     if (!wrapped_packet.deserialize(ack_buffer))
     {
-        std::cerr << "[CLIENT] Wrapper packet wasn't deserialized correctly!" << endl;
-        return false;
+        std::cerr << "[DELETE] Wrapper packet wasn't deserialized correctly!" << endl;
+        return 0;
     }
 
-    if (wrapped_packet.getCounter() != rcv_counter)
-        return 0;
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
 
-    rcv_counter++;
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[DELETE] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
     DeleteAck ack;
     ack.deserialize(wrapped_packet.getPayload());
 
     if (ack.getAckCode() == 0)
     {
-        std::cout << "[CLIENT] File deleted successfully on the cloud!" << endl;
+        std::cout << "[DELETE] File deleted successfully on the cloud!" << endl;
         return 1;
     }
     else if (ack.getAckCode() == 1)
     {
-        std::cerr << "[CLIENT] File deletion failed on the cloud!" << endl;
+        std::cerr << "[DELETE] File deletion failed on the cloud!" << endl;
         return 0;
     }
     if (ack.getAckCode() == 2)
@@ -1134,35 +1177,81 @@ int Client::delete_file()
         std::cerr << "[CLIENT] File does not exist on the cloud!" << endl;
         return 0;
     }
-    return 0;
-}
 
+    cout << "****************************************" << endl;
+    cout << "********     End Delete File    ********" << endl;
+    cout << "****************************************" << endl;
+
+    return 1;
+}
 int Client::logout()
 {
     LogoutM1 m1;
 
-    Wrapper m1_wrapper(session_key, send_counter, m1.serialize());
+    Wrapper m1_wrapper(session_key, s_counter, m1.serialize());
 
     Buffer serialized_packet = m1_wrapper.serialize();
 
     // Send wrapped packet to server
-    if (!sendData(clientSocket, serialized_packet))
-        return false;
+    if (!sendData(communcation_socket, serialized_packet))
+    {
+        std::cerr << "[LOGOUT] Error sending the serialized packet" << std::endl;
+        return 0;
+    }
 
     clear_vec(serialized_packet);
-    incrementCounter(); // increment send counter
-}
-void Client::incrementCounter()
-{
-    if (send_counter == MAX::counter_max_value)
-        performClientJob(); // reinitiate session
-    else
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+        return -1;
+    }
 
-        send_counter++;
+    cout << "****************************************" << endl;
+    cout << "***********   End Session   ************" << endl;
+    cout << "****************************************" << endl;
+    return 1;
+}
+int Client::handleMenuChoice(const std::string &choice)
+{
+    try
+    {
+        auto option = static_cast<MenuOption>(std::stoi(choice));
+        switch (option)
+        {
+        case MenuOption::UploadFile:
+            return upload_file();
+        case MenuOption::DownloadFile:
+            return download_file();
+        case MenuOption::ListFiles:
+            return list_files();
+        case MenuOption::RenameFile:
+            return rename_file();
+        case MenuOption::DeleteFile:
+            return delete_file();
+        case MenuOption::Logout:
+            return logout();
+        default:
+            std::cout << "Invalid choice. Please try again." << std::endl;
+            return 0; // Indicate that no action was taken for invalid input
+        }
+    }
+    catch (const std::invalid_argument &)
+    {
+        std::cout << "Invalid input. Please enter a number." << std::endl;
+    }
+    catch (const std::out_of_range &)
+    {
+        std::cout << "Invalid input. Number out of range." << std::endl;
+    }
+    return 0; // Indicate that no action was taken for invalid input
 }
 
 Client::~Client()
 {
     // Clean up resources, close the socket, etc.
-    close(clientSocket);
+    close(communcation_socket);
+    clear_vec(session_key);
+
+    std::cout << "[CLIENT] CLIENT on socket : " << communcation_socket << " closed!" << std::endl;
 }

@@ -120,14 +120,16 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ctx = EVP_CIPHER_CTX_new();
     if (!ctx)
     {
-        cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n";
+        std::cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n"
+                  << std::endl;
         return false;
     }
 
     int ret = EVP_DecryptInit(ctx, cipher, key.data(), iv.data());
     if (ret != 1)
     {
-        cerr << "Error: DecryptInit Failed\n";
+        std::cerr << "Error: DecryptInit Failed\n"
+                  << std::endl;
         return false;
     }
 
@@ -138,7 +140,9 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ret = EVP_DecryptUpdate(ctx, clear_buf.data(), &update_len, cphr_buf.data(), cphr_size);
     if (ret != 1)
     {
-        cerr << "Error: DecryptUpdate Failed\n";
+        std::cerr << "Error: DecryptUpdate Failed\n"
+                  << std::endl;
+
         return false;
     }
     total_len += update_len;
@@ -147,7 +151,9 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ret = EVP_DecryptFinal(ctx, clear_buf.data() + total_len, &update_len);
     if (ret != 1)
     {
-        cerr << "Error: DecryptFinal Failed\n";
+        std::cerr << "Error: DecryptFinal Failed\n"
+                  << std::endl;
+        ;
         return false;
     }
     total_len += update_len;
@@ -160,7 +166,7 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     return true;
 }
 
-bool generateSessionKey(Buffer &digest, Buffer &sessionKey)
+void generateSessionKey(Buffer &digest, Buffer &sessionKey)
 {
     const EVP_CIPHER *cipher = EVP_aes_128_cbc();
 
@@ -168,8 +174,6 @@ bool generateSessionKey(Buffer &digest, Buffer &sessionKey)
 
     sessionKey.resize(sessionKeyLength);
     std::copy(digest.begin(), digest.begin() + sessionKeyLength, sessionKey.begin());
-
-    return true;
 };
 
 bool encrypt_aes_ccm(Buffer clear_buf, Buffer &cphr_buf, Buffer sessionKey, Buffer iv, Buffer aad, Buffer &tag)
