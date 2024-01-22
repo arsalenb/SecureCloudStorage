@@ -82,67 +82,6 @@ int Worker::login()
 
     if (username_exists)
     {
-        // Load the server certificate from PEM file
-        FILE *server_certificate_file = fopen("../commons/Cloud_Storage_Server_cert.pem", "r");
-        if (!server_certificate_file)
-        {
-            std::cerr << "[LOGIN] Error loading server certificate" << std::endl;
-            return 0;
-        }
-
-        X509 *server_certif = PEM_read_X509(server_certificate_file, NULL, NULL, NULL);
-        fclose(server_certificate_file);
-
-        if (!server_certif)
-        {
-            std::cerr << "[LOGIN] Error reading server certificate" << std::endl;
-            return 0;
-        }
-
-        // Send server certificate to client
-        BIO *bio = BIO_new(BIO_s_mem());
-        if (!bio)
-        {
-            std::cerr << "[LOGIN] Error creating BIO" << std::endl;
-            X509_free(server_certif);
-            return 0;
-        }
-
-        int result = PEM_write_bio_X509(bio, server_certif);
-
-        if (!result)
-        {
-            std::cerr << "[LOGIN] (CertificateStore) Failed to write the certificate in the BIO" << std::endl;
-            BIO_free(bio);
-            return 0;
-        }
-
-        // Determine the size of the certificate
-        int certif_size = BIO_pending(bio);
-
-        // Resize the vector to fit the certificate
-        Buffer certif_buffer(certif_size);
-        if (BIO_read(bio, certif_buffer.data(), certif_size) <= 0)
-        {
-            std::cerr << "[LOGIN] (CertificateStore) Failed to read the certificate from the BIO" << std::endl;
-            return 0;
-        }
-
-        BIO_free(bio);
-
-        // Send the certificate size to the client
-        if (!sendSize(communcation_socket, certif_size))
-        {
-            std::cerr << "[LOGIN] Error sending the certificate size" << std::endl;
-            return 0;
-        }
-
-        // Send the certificate data to the client
-        if (!sendData(communcation_socket, certif_buffer))
-        {
-            std::cerr << "[LOGIN] Error while sending the certificate to client" << std::endl;
-            return 0;
-        }
 
         // receive the client ECDH public key
         EVP_PKEY *deserializedClientKey;
@@ -224,15 +163,67 @@ int Worker::login()
             std::cerr << "[LOGIN] Encrypting Digital Signature failed" << std::endl;
             return 0;
         }
-        // Send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
+        // Send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert size, Server_cert
+
+        // -------------------------- CERTIFICATE HANDLING ----------------------------------
+
+        // Load the server certificate from PEM file
+        FILE *server_certificate_file = fopen("../commons/Cloud_Storage_Server_cert.pem", "r");
+        if (!server_certificate_file)
+        {
+            std::cerr << "[LOGIN] Error loading server certificate" << std::endl;
+            return 0;
+        }
+
+        X509 *server_certif = PEM_read_X509(server_certificate_file, NULL, NULL, NULL);
+        fclose(server_certificate_file);
+
+        if (!server_certif)
+        {
+            std::cerr << "[LOGIN] Error reading server certificate" << std::endl;
+            return 0;
+        }
+
+        // Send server certificate to client
+        BIO *bio = BIO_new(BIO_s_mem());
+        if (!bio)
+        {
+            std::cerr << "[LOGIN] Error creating BIO" << std::endl;
+            X509_free(server_certif);
+            return 0;
+        }
+
+        int result = PEM_write_bio_X509(bio, server_certif);
+
+        if (!result)
+        {
+            std::cerr << "[LOGIN] (CertificateStore) Failed to write the certificate in the BIO" << std::endl;
+            BIO_free(bio);
+            return 0;
+        }
+
+        // Determine the size of the certificate
+        int certif_size = BIO_pending(bio);
+
+        // Resize the vector to fit the certificate
+        Buffer certif_buffer(certif_size);
+        if (BIO_read(bio, certif_buffer.data(), certif_size) <= 0)
+        {
+            std::cerr << "[LOGIN] (CertificateStore) Failed to read the certificate from the BIO" << std::endl;
+            return 0;
+        }
+
+        BIO_free(bio);
+
+        // --------------------------------------------------------------------------------
 
         Buffer sendBuffer;
 
-        serializeLoginMessageFromTheServer(sServerKey, cipher_text, iv, sendBuffer);
+        serializeM3(sServerKey, cipher_text, iv, certif_buffer, sendBuffer);
 
         if (!sendData(communcation_socket, sendBuffer))
         {
-            std::cerr << "[LOGIN] Sending [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV] failed" << std::endl;
+            std::cerr << "[LOGIN] Sending [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV, Server_cert size, Server_cert] failed" << std::endl;
             return 0;
         }
 

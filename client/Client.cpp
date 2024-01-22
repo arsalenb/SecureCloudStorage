@@ -71,8 +71,7 @@ int Client::login()
     }
 
     // Send username size to the server
-    size_t usernameLength = username.size();
-    if (!sendSize(communcation_socket, usernameLength))
+    if (!sendSize(communcation_socket, username.size()))
     {
         std::cerr << "[LOGIN] Error sending the username length" << std::endl;
         return 0;
@@ -124,56 +123,6 @@ int Client::login()
         return 0;
     }
 
-    // User exists, proceed to receive the server certificate
-    X509 *serverCert = nullptr;
-    if (!receiveServerCertificate(serverCert))
-    {
-        std::cerr << "[LOGIN] Error receiving server certificate" << std::endl;
-        return 0;
-    }
-
-    const char *caCertFile = "../commons/Cloud Storage CA_cert.pem";
-    const char *crlFile = "../commons/Cloud Storage CA_crl.pem";
-    // Load CA certificate
-    X509 *caCert = nullptr;
-    FILE *caCertFilePtr = fopen(caCertFile, "r");
-    if (!caCertFilePtr)
-    {
-        std::cerr << "[LOGIN] Error opening CA certificate file" << std::endl;
-        return 0;
-    }
-
-    caCert = PEM_read_X509(caCertFilePtr, nullptr, nullptr, nullptr);
-    fclose(caCertFilePtr);
-    if (!caCert)
-    {
-        std::cerr << "[LOGIN] Error reading CA certificate file" << std::endl;
-        return 0;
-    }
-
-    // Load CRL
-    X509_CRL *crl = nullptr;
-    FILE *crlFilePtr = fopen(crlFile, "r");
-    if (!crlFilePtr)
-    {
-        std::cerr << "[LOGIN] Error opening CLR  file" << std::endl;
-        return 0;
-    }
-
-    crl = PEM_read_X509_CRL(crlFilePtr, nullptr, nullptr, nullptr);
-    fclose(crlFilePtr);
-
-    if (!crl)
-    {
-        std::cerr << "[LOGIN] Error reading CLR  file" << std::endl;
-        return 0;
-    }
-    bool verified = verifyServerCertificate(caCert, crl, serverCert);
-    if (!verified)
-    {
-        std::cerr << "[LOGIN] Server certificate verification failed." << std::endl;
-        return 0;
-    }
     // Generate the elliptic curve diffie-Hellman keys for the client
     EVP_PKEY *ECDH_Keys;
     if (!(ECDH_Keys = ECDHKeyGeneration()))
@@ -212,22 +161,95 @@ int Client::login()
 
     if (!receiveData(communcation_socket, receiveBuffer))
     {
-        std::cerr << "[LOGIN] Error receiving [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV] data from the server" << std::endl;
+        std::cerr << "[LOGIN] Error receiving [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert size, Server_cert] data from the server" << std::endl;
         return 0;
     }
 
-    // Variables to store the deserialized components (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV
+    // Variables to store the deserialized components (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert
     Buffer sServerEphemeralKey;
+    Buffer certificate_buffer;
     int sServerEphemeralKeyLength = 0;
     Buffer cipher_text;
     Buffer iv;
 
     // Call the deserialize function
-    if (!deserializeLoginMessageFromTheServer(receiveBuffer, sServerEphemeralKey, cipher_text, iv))
+    if (!deserializeM3(receiveBuffer, sServerEphemeralKey, cipher_text, certificate_buffer, iv))
     {
-        std::cerr << "[LOGIN] Error deseiralizing [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV] " << std::endl;
+        std::cerr << "[LOGIN] Error deseiralizing [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV, Server_cert size, Server_cert] " << std::endl;
         return 0;
     }
+
+    // -------------------------- CERTIFICATE HANDLING ----------------------------------
+
+    // User exists, proceed to receive the server certificate
+    X509 *server_cert = nullptr;
+
+    // Create a BIO from the received data
+    BIO *bio = BIO_new_mem_buf(certificate_buffer.data(), certificate_buffer.size());
+    if (!bio)
+    {
+        std::cerr << "Error creating BIO from certificate data" << std::endl;
+        return false;
+    }
+
+    // Read the X509 certificate from the BIO
+
+    server_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+    if (!server_cert)
+    {
+        std::cerr << "Error reading X509 certificate from BIO" << std::endl;
+        ERR_print_errors_fp(stderr); // Print OpenSSL error information
+        BIO_free(bio);
+        return false;
+    }
+    // Clean up
+    BIO_free(bio);
+
+    const char *caCertFile = "../commons/Cloud Storage CA_cert.pem";
+    const char *crlFile = "../commons/Cloud Storage CA_crl.pem";
+    // Load CA certificate
+    X509 *caCert = nullptr;
+    FILE *caCertFilePtr = fopen(caCertFile, "r");
+    if (!caCertFilePtr)
+    {
+        std::cerr << "[LOGIN] Error opening CA certificate file" << std::endl;
+        return 0;
+    }
+
+    caCert = PEM_read_X509(caCertFilePtr, nullptr, nullptr, nullptr);
+    fclose(caCertFilePtr);
+    if (!caCert)
+    {
+        std::cerr << "[LOGIN] Error reading CA certificate file" << std::endl;
+        return 0;
+    }
+
+    // Load CRL
+    X509_CRL *crl = nullptr;
+    FILE *crlFilePtr = fopen(crlFile, "r");
+    if (!crlFilePtr)
+    {
+        std::cerr << "[LOGIN] Error opening CLR  file" << std::endl;
+        return 0;
+    }
+
+    crl = PEM_read_X509_CRL(crlFilePtr, nullptr, nullptr, nullptr);
+    fclose(crlFilePtr);
+
+    if (!crl)
+    {
+        std::cerr << "[LOGIN] Error reading CLR  file" << std::endl;
+        return 0;
+    }
+
+    if (!verifyServerCertificate(caCert, crl, server_cert))
+    {
+        std::cerr << "[LOGIN] Server certificate verification failed." << std::endl;
+        return 0;
+    }
+
+    // --------------------------------------------------------------------------------
+
     sServerEphemeralKeyLength = sServerEphemeralKey.size();
     if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
     {
@@ -277,7 +299,7 @@ int Client::login()
         return 0;
     }
     // verify the <(g^a,g^b)>s
-    EVP_PKEY *server_public_key = X509_get_pubkey(serverCert);
+    EVP_PKEY *server_public_key = X509_get_pubkey(server_cert);
     if (!verifyDigitalSignature(concatenatedKeys, plaintext, server_public_key))
     {
         std::cerr << "[LOGIN] Failed to verify digital signature" << std::endl;
@@ -317,7 +339,7 @@ int Client::login()
     EVP_cleanup();
 
     // Clean up
-    X509_free(serverCert);
+    X509_free(server_cert);
 
     return 1;
 }

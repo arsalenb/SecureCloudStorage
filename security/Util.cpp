@@ -19,7 +19,7 @@ typedef std::vector<unsigned char> Buffer;
 
 size_t calLengthLoginMessageFromTheServer()
 {
-    return Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size + CBC_IV_Length;
+    return Max_Ephemral_Public_Key_Size + sizeof(size_t) + Encrypted_Signature_Size + CBC_IV_Length + sizeof(size_t) + Max_Certificate_Size;
 }
 
 bool receiveEphemeralPublicKey(int clientSocket, EVP_PKEY *&deserializedKey, Buffer &serializedKey)
@@ -168,10 +168,11 @@ bool computeSHA256Digest(Buffer &data, Buffer &digest)
     return true;
 }
 
-void serializeLoginMessageFromTheServer(Buffer &serializedServerEphemralKey,
-                                        Buffer &cipher_text, Buffer &iv, Buffer &sendBuffer)
+void serializeM3(Buffer &serializedServerEphemralKey,
+                 Buffer &cipher_text, Buffer &iv, Buffer &server_certificate, Buffer &sendBuffer)
 {
     int serializedServerrEphemralKeyLength = serializedServerEphemralKey.size();
+    size_t position = 0;
 
     // Calculate the total length of the data to be sent
     size_t totalLength = calLengthLoginMessageFromTheServer();
@@ -181,42 +182,88 @@ void serializeLoginMessageFromTheServer(Buffer &serializedServerEphemralKey,
 
     // Copy serializedServerKey to the buffer
     std::memcpy(sendBuffer.data(), serializedServerEphemralKey.data(), Max_Ephemral_Public_Key_Size);
+    position += Max_Ephemral_Public_Key_Size;
 
     // Copy serializedServerKeyLength to the buffer
-    std::memcpy(sendBuffer.data() + Max_Ephemral_Public_Key_Size, &serializedServerrEphemralKeyLength, sizeof(int));
+
+    // -- Convert key_size to network byte order
+    size_t no_key_size = htonl(serializedServerrEphemralKeyLength);
+
+    // -- Insert key_size into the buffer
+    unsigned char const *key_size_begin = reinterpret_cast<unsigned char const *>(&no_key_size);
+
+    std::memcpy(sendBuffer.data() + position, key_size_begin, sizeof(size_t));
+    position += sizeof(size_t);
 
     // Copy cipher_text to the buffer
-    std::memcpy(sendBuffer.data() + Max_Ephemral_Public_Key_Size + sizeof(int), cipher_text.data(), Encrypted_Signature_Size);
+    std::memcpy(sendBuffer.data() + position, cipher_text.data(), Encrypted_Signature_Size);
+    position += Encrypted_Signature_Size;
 
     // Copy iv to the buffer
-    std::memcpy(sendBuffer.data() + Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size, iv.data(), CBC_IV_Length);
+    std::memcpy(sendBuffer.data() + position, iv.data(), CBC_IV_Length);
+    position += CBC_IV_Length;
+
+    // Copy certificate size to the buffer
+    size_t certificate_size = server_certificate.size();
+    // -- Convert key_size to network byte order
+    size_t no_cert_size = htonl(certificate_size);
+
+    // -- Insert key_size into the buffer
+    unsigned char const *cert_size_begin = reinterpret_cast<unsigned char const *>(&no_cert_size);
+
+    std::memcpy(sendBuffer.data() + position, cert_size_begin, sizeof(size_t));
+    position += sizeof(size_t);
+
+    // copy server certificate to buffer
+    std::memcpy(sendBuffer.data() + position, server_certificate.data(), Max_Certificate_Size);
+    position += Max_Certificate_Size;
 }
 
-bool deserializeLoginMessageFromTheServer(Buffer &receivedBuffer,
-                                          Buffer &serializedServerEphemralKey,
-                                          Buffer &cipher_text, Buffer &iv)
+bool deserializeM3(Buffer &receivedBuffer,
+                   Buffer &serializedServerEphemralKey,
+                   Buffer &cipher_text, Buffer &server_certificate, Buffer &iv)
 {
+    size_t position = 0;
 
     // Allocate memory for the individual components
     Buffer maxSerializedServerEphemralKey(Max_Ephemral_Public_Key_Size);
+    Buffer maxSerializedServerCertificate(Max_Certificate_Size);
 
     cipher_text.resize(Encrypted_Signature_Size);
     iv.resize(CBC_IV_Length);
 
-    // Copy data from the received buffer to the individual components
+    // Extract max ephemeral public key
     std::memcpy(maxSerializedServerEphemralKey.data(), receivedBuffer.data(), Max_Ephemral_Public_Key_Size);
+    position += Max_Ephemral_Public_Key_Size;
 
-    int serializedServerrEphemralKeyLength;
-    std::memcpy(&serializedServerrEphemralKeyLength, receivedBuffer.data() + Max_Ephemral_Public_Key_Size, sizeof(int));
+    // Extract key_size from the buffer
+    size_t network_key_size = 0;
+    memcpy(&network_key_size, receivedBuffer.data() + position, sizeof(size_t));
+    size_t key_size = ntohl(network_key_size);
+    position += sizeof(size_t);
 
-    std::memcpy(cipher_text.data(), receivedBuffer.data() + Max_Ephemral_Public_Key_Size + sizeof(int), Encrypted_Signature_Size);
-    std::memcpy(iv.data(), receivedBuffer.data() + Max_Ephemral_Public_Key_Size + sizeof(int) + Encrypted_Signature_Size, CBC_IV_Length);
+    // Extract cipher_text from buffer
+    std::memcpy(cipher_text.data(), receivedBuffer.data() + position, Encrypted_Signature_Size);
+    position += Encrypted_Signature_Size;
 
-    // copy portion to the serialized ephemral key
-    // Create a new vector with the specified length and copy the data
+    // Extract IV from buffer
+    std::memcpy(iv.data(), receivedBuffer.data() + position, CBC_IV_Length);
+    position += CBC_IV_Length;
 
+    // Extract cert_size from the buffer
+    size_t network_cert_size = 0;
+    memcpy(&network_cert_size, receivedBuffer.data() + position, sizeof(size_t));
+    size_t cert_size = ntohl(network_cert_size);
+    position += sizeof(size_t);
+
+    // Extract certificate from buffer
+    std::memcpy(maxSerializedServerCertificate.data(), receivedBuffer.data() + position, Max_Certificate_Size);
+
+    // Cut the excess data on received key and certificate
     serializedServerEphemralKey.insert(serializedServerEphemralKey.begin(), maxSerializedServerEphemralKey.begin(),
-                                       maxSerializedServerEphemralKey.begin() + serializedServerrEphemralKeyLength);
+                                       maxSerializedServerEphemralKey.begin() + key_size);
+    server_certificate.insert(server_certificate.begin(), maxSerializedServerCertificate.begin(),
+                              maxSerializedServerCertificate.begin() + cert_size);
 
     return true;
 }
