@@ -486,12 +486,17 @@ int Client::start()
     do
     {
         // Display menu
+
         std::cout << "Choose an option:" << std::endl;
-        std::cout << "1. Upload file\n2. Download file\n3. List files\n"
-                     "4. Rename file\n5. Delete file\n6. Logout\n";
+        std::cout << "1. Upload File" << std::endl;
+        std::cout << "2. Download File" << std::endl;
+        std::cout << "3. List Files" << std::endl;
+        std::cout << "4. Rename File" << std::endl;
+        std::cout << "5. Delete File" << std::endl;
+        std::cout << "6. Logout" << std::endl;
 
         // Get user input
-        std::cout << "[CLIENT] Enter your choice: ";
+        std::cout << "[CLIENT] Enter your choice (1-6): ";
         std::getline(std::cin, choice);
 
         // Handle menu choice
@@ -500,11 +505,11 @@ int Client::start()
         if (result == -1)
         {
             std::cerr << "[WORKER] Exiting .... Replay Attack or Counter reached maximum value" << std::endl;
-            // Close any necessary resources (e.g., communication_socket)
+            close(communcation_socket);
             exit(EXIT_FAILURE);
         }
 
-    } while (std::stoi(choice) != LogoutOption);
+    } while (result != -2 ? std::stoi(choice) != LogoutOption : true);
 
     return 0;
 }
@@ -741,7 +746,7 @@ int Client::download_file()
     // send wrapped packet to server
     if (!sendData(communcation_socket, serialized_packet))
     {
-        return false;
+        return 0;
     }
     clear_vec(serialized_packet);
 
@@ -910,7 +915,7 @@ int Client::download_file()
         cout << "[Download] File downloaded correctly! " << endl;
 
     cout << "********************************************" << endl;
-    cout << "*********     End Download File    *********" << endl;
+    cout << "**********  End Download File    ***********" << endl;
     cout << "********************************************" << endl;
     return 1;
 }
@@ -1264,54 +1269,97 @@ int Client::logout()
     if (!sendData(communcation_socket, serialized_packet))
     {
         std::cerr << "[LOGOUT] Error sending the serialized packet" << std::endl;
+        clear_vec(serialized_packet);
         return 0;
     }
 
-    clear_vec(serialized_packet);
     s_counter = incrementCounter(s_counter);
     if (s_counter == -1)
     {
-        std::cerr << "[UPLOAD] Counter reached maximum value" << std::endl;
+        std::cerr << "[LOGOUT] Counter reached maximum value" << std::endl;
+        clear_vec(serialized_packet);
         return -1;
     }
+
+    // -------------- HANDLE ACK PACKET ---------------------
+    Buffer ack_buffer(Wrapper::getSize(LogoutAck::getSize()));
+    if (!receiveData(communcation_socket, ack_buffer))
+    {
+        std::cerr << "[LOGOUT] Error receiving data" << std::endl;
+        clear_vec(serialized_packet);
+        return 0;
+    }
+    // deserialize to extract payload in plaintext
+    Wrapper wrapped_packet(session_key);
+
+    if (!wrapped_packet.deserialize(ack_buffer))
+    {
+        std::cerr << "[LOGOUT] Wrapper packet wasn't deserialized correctly!" << endl;
+        clear_vec(serialized_packet);
+        return 0;
+    }
+
+    if (wrapped_packet.getCounter() != r_counter)
+        return -1;
+
+    r_counter = incrementCounter(r_counter);
+    if (r_counter == -1)
+    {
+        std::cerr << "[LOGOUT] Counter reached maximum value" << std::endl;
+        clear_vec(serialized_packet);
+        return -1;
+    }
+
+    LogoutAck ack;
+    ack.deserialize(wrapped_packet.getPayload());
+
+    if (ack.getAckCode())
+    {
+        std::cerr << "[LOGOUT] An error occured during logout operation" << endl;
+        return 0;
+    }
+
+    // Free session key from object
+    clear_vec(session_key);
 
     cout << "****************************************" << endl;
     cout << "***********   End Session   ************" << endl;
     cout << "****************************************" << endl;
+
     return 1;
 }
 int Client::handleMenuChoice(const std::string &choice)
 {
+    MenuOption option;
     try
     {
-        auto option = static_cast<MenuOption>(std::stoi(choice));
-        switch (option)
-        {
-        case MenuOption::UploadFile:
-            return upload_file();
-        case MenuOption::DownloadFile:
-            return download_file();
-        case MenuOption::ListFiles:
-            return list_files();
-        case MenuOption::RenameFile:
-            return rename_file();
-        case MenuOption::DeleteFile:
-            return delete_file();
-        case MenuOption::Logout:
-            return logout();
-        default:
-            std::cout << "Invalid choice. Please try again." << std::endl;
-            return 0; // Indicate that no action was taken for invalid input
-        }
+        option = static_cast<MenuOption>(std::stoi(choice));
     }
-    catch (const std::invalid_argument &)
+    catch (const std::exception &e)
     {
         std::cout << "Invalid input. Please enter a number." << std::endl;
+        return -2;
     }
-    catch (const std::out_of_range &)
+
+    switch (option)
     {
-        std::cout << "Invalid input. Number out of range." << std::endl;
+    case MenuOption::UploadFile:
+        return upload_file();
+    case MenuOption::DownloadFile:
+        return download_file();
+    case MenuOption::ListFiles:
+        return list_files();
+    case MenuOption::RenameFile:
+        return rename_file();
+    case MenuOption::DeleteFile:
+        return delete_file();
+    case MenuOption::Logout:
+        return logout();
+    default:
+        std::cout << "Invalid choice. Please try again." << std::endl;
+        return -3; // Indicate that no action was taken for invalid input
     }
+
     return 0; // Indicate that no action was taken for invalid input
 }
 

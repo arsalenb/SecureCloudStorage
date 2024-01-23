@@ -343,7 +343,15 @@ int Worker::upload_file(Buffer payload)
     bool error_occured = false;
 
     File file;
-    file.create(file_path);
+    try
+    {
+        file.create(file_path);
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "[UPLOAD] " << e.what() << std::endl;
+        return 0;
+    }
 
     // Receive chunks from client
     for (int i = 0; i < num_file_chunks; i++)
@@ -395,7 +403,7 @@ int Worker::upload_file(Buffer payload)
 
         if (!receiveData(communcation_socket, message_buff))
         {
-            std::cerr << "Error receiving  data" << std::endl;
+            std::cerr << "[UPLOAD] Error receiving  data" << std::endl;
             error_occured = true;
             return 0;
         }
@@ -427,7 +435,7 @@ int Worker::upload_file(Buffer payload)
     }
     cout << "[UPLOAD] Received " << m1.file_size << "B/ " << m1.file_size << "B" << endl;
 
-    // -------------- HANDLE ACK PACKET ---------------------
+    // ------------------- HANDLE ACK PACKET ---------------------
 
     if (error_occured)
         ack_packet = UploadAck(0); // in case of error
@@ -496,7 +504,7 @@ int Worker::download_file(Buffer payload)
     serialized_packet = ack_wrapper.serialize();
     if (!sendData(communcation_socket, serialized_packet))
     {
-        std::cerr << "Error sending the serialized packet" << std::endl;
+        std::cerr << "[DOWNLOAD] Error sending the serialized packet" << std::endl;
         return 0;
     }
 
@@ -744,9 +752,33 @@ int Worker::logout(Buffer payload)
 {
     LogoutM1 m1;
     m1.deserialize(payload);
-    // free hash and secret keys
+
+    // ------------------- HANDLE ACK PACKET ---------------------
+    LogoutAck ack_packet = LogoutAck(0);
+
+    Wrapper ack_wrapper(session_key, s_counter, ack_packet.serialize());
+
+    Buffer serialized_packet = ack_wrapper.serialize();
+
+    // Free session key from object
     clear_vec(session_key);
-    return 0;
+
+    if (!sendData(communcation_socket, serialized_packet))
+    {
+        std::cerr << "[LOGOUT] Error sending the serialized packet" << std::endl;
+        return 0;
+    }
+
+    s_counter = incrementCounter(s_counter);
+    if (s_counter == -1)
+    {
+        std::cerr << "[LOGOUT] Counter reached maximum value" << std::endl;
+        return -1;
+    }
+
+    cout << "[LOGOUT] Session of user " << username << " has ended!" << endl;
+
+    return 1;
 }
 int Worker::start()
 {
@@ -787,7 +819,10 @@ int Worker::start()
 
         // Check counter otherwise exit
         if (packet_counter != r_counter)
+        {
+            std::cerr << "[WORKER] Replay attack detected, closing on socket!" << std::endl;
             return -1;
+        }
 
         r_counter = incrementCounter(r_counter);
         if (r_counter == -1)
@@ -840,6 +875,6 @@ int Worker::start()
 Worker::~Worker()
 {
     clear_vec(session_key);
-
+    close(communcation_socket);
     std::cout << "[WORKER] Worker on socket : " << communcation_socket << " closed!" << std::endl;
 }
