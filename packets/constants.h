@@ -28,7 +28,6 @@ namespace RequestCodes
 
 namespace MAX
 {
-
     const size_t file_name = 255; // linux file name length limit
     const size_t username_length = 50;
     const size_t passowrd_length = 50;
@@ -38,7 +37,12 @@ namespace MAX
     const size_t ack_msg = 50 + 1;                                    // extra char for str terminator
     const size_t counter_max_value = std::numeric_limits<int>::max(); // number of requests before shutting down the session
     const size_t initial_request_length = 520;                        // size of the initial request size to be expected
+}
 
+namespace CryptoMaterials
+{
+    const std::string caCertFile = "../commons/Cloud Storage CA_cert.pem";
+    const std::string crlFile = "../commons/Cloud Storage CA_crl.pem";
 }
 
 #endif // _REQUEST_CODES_H

@@ -146,6 +146,7 @@ EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
     if (BIO_write(bio, sKeyBuffer.data(), sKeyBuffer.size()) <= 0)
     {
         cerr << "[ECDH] BIO_write failed" << endl;
+        BIO_free(bio);
         return nullptr;
     }
 
@@ -154,6 +155,7 @@ EVP_PKEY *deserializePublicKey(std::vector<unsigned char> &sKeyBuffer)
     if (!pubKey)
     {
         cerr << "[ECDH] PEM_read_bio_PUBKEY failed" << endl;
+        BIO_free(bio);
         return nullptr;
     }
 

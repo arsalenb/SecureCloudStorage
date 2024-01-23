@@ -1,3 +1,6 @@
+#ifndef _LIST_H
+#define _LIST_H
+
 #include <string>
 #include <cstdint>
 #include <cstring>
@@ -63,3 +66,5 @@ public:
     // Getter for file_list_data
     const char *getFileListData() const;
 };
+
+#endif

@@ -72,7 +72,7 @@ int Worker::login()
     }
 
     // Send result back to client
-    size_t result = (username_exists) ? 1 : 0;
+    int result = (username_exists) ? 1 : 0;
 
     if (!sendSize(communcation_socket, result))
     {
@@ -80,201 +80,225 @@ int Worker::login()
         return 0;
     }
 
-    if (username_exists)
+    if (!username_exists)
     {
-
-        // receive the client ECDH public key
-        EVP_PKEY *deserializedClientKey;
-        Buffer sClientKey;
-
-        if (!receiveEphemeralPublicKey(communcation_socket, deserializedClientKey, sClientKey))
-        {
-            // Handle the case where receiving or deserialization failed
-            std::cerr << "Failed to receive or deserialize the key" << std::endl;
-            return 0;
-        }
-
-        // Generate the elliptic curve diffie-Hellman key pair of server
-        EVP_PKEY *ECDH_server;
-        if (!(ECDH_server = ECDHKeyGeneration()))
-        {
-            std::cerr << "[LOGIN] ECDH key generation failed" << std::endl;
-            return 0;
-        }
-
-        // Serialize the public key
-        Buffer sServerKey;
-
-        if (!serializePubKey(ECDH_server, sServerKey))
-        {
-            std::cerr << "[LOGIN] Serialization of public key failed" << std::endl;
-            return 0;
-        }
-
-        // Calculate (g^a)^b
-        Buffer sharedSecretKey;
-        int derivationResult = deriveSharedSecret(ECDH_server, deserializedClientKey, sharedSecretKey);
-        if (!derivationResult)
-        {
-            std::cerr << "[LOGIN] Key derivation was unsuccessfull" << std::endl;
-            return 0;
-        }
-
-        // Generate session key Sha256((g^a)^b)
-        Buffer digest;
-        if (!computeSHA256Digest(sharedSecretKey, digest))
-        {
-            std::cerr << "[LOGIN] Shared secret derivation failed" << std::endl;
-            return 0;
-        }
-
-        // Extract first 128bits of the digest
-        generateSessionKey(digest, session_key);
-
-        // Concatinate (g^b,g^a), the serialized keys
-        Buffer concatenatedKeys;
-        concatenatedKeys.insert(concatenatedKeys.begin(), sServerKey.begin(), sServerKey.end());
-        concatenatedKeys.insert(concatenatedKeys.end(), sClientKey.begin(), sClientKey.end());
-
-        // Load server private key:
-        EVP_PKEY *server_private_key = nullptr;
-        string pem_pass = "root";
-        if (!loadPrivateKey("../commons/server_private_key.pem", server_private_key, pem_pass))
-        {
-            std::cerr << "[LOGIN] Loading Server Private Key failed" << std::endl;
-            return 0;
-        }
-
-        // Create the digiatl signature <(g^a,g^b)>s using the server private key
-        Buffer signature;
-        if (!generateDigitalSignature(concatenatedKeys, server_private_key, signature))
-        {
-            std::cerr << "[LOGIN] Creating Digital Signature failed" << std::endl;
-            return 0;
-        }
-        EVP_PKEY_free(server_private_key);
-
-        // Encrypt  {<(g^a,g^b)>s}k  using the session key
-        Buffer cipher_text;
-        Buffer iv;
-
-        if (!encryptTextAES(signature, session_key, cipher_text, iv))
-        {
-            std::cerr << "[LOGIN] Encrypting Digital Signature failed" << std::endl;
-            return 0;
-        }
-        // Send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert size, Server_cert
-
-        // -------------------------- CERTIFICATE HANDLING ----------------------------------
-
-        // Load the server certificate from PEM file
-        FILE *server_certificate_file = fopen("../commons/Cloud_Storage_Server_cert.pem", "r");
-        if (!server_certificate_file)
-        {
-            std::cerr << "[LOGIN] Error loading server certificate" << std::endl;
-            return 0;
-        }
-
-        X509 *server_certif = PEM_read_X509(server_certificate_file, NULL, NULL, NULL);
-        fclose(server_certificate_file);
-
-        if (!server_certif)
-        {
-            std::cerr << "[LOGIN] Error reading server certificate" << std::endl;
-            return 0;
-        }
-
-        // Send server certificate to client
-        BIO *bio = BIO_new(BIO_s_mem());
-        if (!bio)
-        {
-            std::cerr << "[LOGIN] Error creating BIO" << std::endl;
-            X509_free(server_certif);
-            return 0;
-        }
-
-        int result = PEM_write_bio_X509(bio, server_certif);
-
-        if (!result)
-        {
-            std::cerr << "[LOGIN] (CertificateStore) Failed to write the certificate in the BIO" << std::endl;
-            BIO_free(bio);
-            return 0;
-        }
-
-        // Determine the size of the certificate
-        int certif_size = BIO_pending(bio);
-
-        // Resize the vector to fit the certificate
-        Buffer certif_buffer(certif_size);
-        if (BIO_read(bio, certif_buffer.data(), certif_size) <= 0)
-        {
-            std::cerr << "[LOGIN] (CertificateStore) Failed to read the certificate from the BIO" << std::endl;
-            return 0;
-        }
-
-        BIO_free(bio);
-
-        // --------------------------------------------------------------------------------
-
-        Buffer sendBuffer;
-
-        serializeM3(sServerKey, cipher_text, iv, certif_buffer, sendBuffer);
-
-        if (!sendData(communcation_socket, sendBuffer))
-        {
-            std::cerr << "[LOGIN] Sending [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV, Server_cert size, Server_cert] failed" << std::endl;
-            return 0;
-        }
-
-        // Receive from the client:  {<(g^a,g^b)>c}k, IV
-
-        size_t receive_buffer_size = Encrypted_Signature_Size + CBC_IV_Length;
-
-        Buffer receive_buffer(receive_buffer_size);
-        if (!receiveData(communcation_socket, receive_buffer))
-        {
-            std::cerr << "[LOGIN] Error receiving {<(g^a,g^b)>c}k, IV" << std::endl;
-            return 0;
-        }
-
-        // Variables to store the deserialized components {<(g^a,g^b)>c}k, IV
-        clear_vec(cipher_text);
-        clear_vec(iv);
-
-        // Call the deserialize function
-        deserializeLoginMessageFromTheClient(receive_buffer, cipher_text, iv);
-
-        // Decrypt  {<(g^a,g^b)>c}k  using the session key
-        Buffer plaintext;
-        if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
-        {
-            std::cerr << "[LOGIN] Error decrypting {<(g^a,g^b)>c}k" << std::endl;
-            return 0;
-        }
-
-        // Load user public key
-        std::string public_key_path = "../commons/" + username + "/public.pem";
-        EVP_PKEY *client_public_key = nullptr;
-        if (!loadPublicKey(public_key_path, client_public_key))
-        {
-            std::cerr << "[LOGIN] Failed to load user public key" << std::endl;
-            return 0;
-        }
-
-        if (!verifyDigitalSignature(concatenatedKeys, plaintext, client_public_key))
-        {
-            std::cerr << "[LOGIN] Failed to verify digital signature" << std::endl;
-            return 0;
-        }
-
-        std::cout << "[LOGIN] Login Success" << std::endl;
-        return 1;
-    }
-    else
-    {
+        std::cerr << "[LOGIN] Username does not exist" << std::endl;
         return 0;
     }
+
+    // receive the client ECDH public key
+    EVP_PKEY *deserializedClientKey;
+    Buffer sClientKey;
+
+    if (!receiveEphemeralPublicKey(communcation_socket, deserializedClientKey, sClientKey))
+    {
+        // Handle the case where receiving or deserialization failed
+        std::cerr << "[LOGIN] Failed to receive or deserialize the key" << std::endl;
+        EVP_PKEY_free(deserializedClientKey);
+        return 0;
+    }
+
+    // Generate the elliptic curve diffie-Hellman key pair of server
+    EVP_PKEY *ECDH_server;
+    if (!(ECDH_server = ECDHKeyGeneration()))
+    {
+        std::cerr << "[LOGIN] ECDH key generation failed" << std::endl;
+        EVP_PKEY_free(deserializedClientKey);
+        EVP_PKEY_free(ECDH_server);
+        return 0;
+    }
+
+    // Serialize the public key
+    Buffer sServerKey;
+    if (!serializePubKey(ECDH_server, sServerKey))
+    {
+        std::cerr << "[LOGIN] Serialization of public key failed" << std::endl;
+        EVP_PKEY_free(deserializedClientKey);
+        EVP_PKEY_free(ECDH_server);
+        return 0;
+    }
+
+    // Calculate (g^a)^b
+    Buffer sharedSecretKey;
+    int derivationResult = deriveSharedSecret(ECDH_server, deserializedClientKey, sharedSecretKey);
+    if (!derivationResult)
+    {
+        std::cerr << "[LOGIN] Key derivation was unsuccessfull" << std::endl;
+        EVP_PKEY_free(deserializedClientKey);
+        EVP_PKEY_free(ECDH_server);
+        return 0;
+    }
+    // cleanup
+    EVP_PKEY_free(deserializedClientKey);
+    EVP_PKEY_free(ECDH_server);
+
+    // Generate session key Sha256((g^a)^b)
+    Buffer digest;
+    if (!computeSHA256Digest(sharedSecretKey, digest))
+    {
+        std::cerr << "[LOGIN] Shared secret derivation failed" << std::endl;
+        return 0;
+    }
+
+    // Extract first 128bits of the digest
+    generateSessionKey(digest, session_key);
+
+    // Concatinate (g^b,g^a), the serialized keys
+    Buffer concatenatedKeys;
+    concatenatedKeys.insert(concatenatedKeys.begin(), sServerKey.begin(), sServerKey.end());
+    concatenatedKeys.insert(concatenatedKeys.end(), sClientKey.begin(), sClientKey.end());
+
+    // Load server private key:
+    EVP_PKEY *server_private_key = nullptr;
+    string pem_pass = "root";
+    if (!loadPrivateKey("../commons/server_private_key.pem", server_private_key, pem_pass))
+    {
+        std::cerr << "[LOGIN] Loading Server Private Key failed" << std::endl;
+        EVP_PKEY_free(server_private_key);
+        return 0;
+    }
+
+    // Create the digiatl signature <(g^a,g^b)>s using the server private key
+    Buffer signature;
+    if (!generateDigitalSignature(concatenatedKeys, server_private_key, signature))
+    {
+        std::cerr << "[LOGIN] Creating Digital Signature failed" << std::endl;
+        EVP_PKEY_free(server_private_key);
+        return 0;
+    }
+    // cleanup
+    EVP_PKEY_free(server_private_key);
+
+    // Encrypt  {<(g^a,g^b)>s}k  using the session key
+    Buffer cipher_text;
+    Buffer iv;
+
+    if (!encryptTextAES(signature, session_key, cipher_text, iv))
+    {
+        std::cerr << "[LOGIN] Encrypting Digital Signature failed" << std::endl;
+        return 0;
+    }
+    // Send to the client: (g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert size, Server_cert
+
+    // -------------------------- CERTIFICATE HANDLING ----------------------------------
+
+    // Load the server certificate from PEM file
+    FILE *server_certificate_file = fopen("../commons/Cloud_Storage_Server_cert.pem", "r");
+    if (!server_certificate_file)
+    {
+        std::cerr << "[LOGIN] Error loading server certificate" << std::endl;
+        return 0;
+    }
+
+    X509 *server_certif = PEM_read_X509(server_certificate_file, NULL, NULL, NULL);
+    fclose(server_certificate_file);
+
+    if (!server_certif)
+    {
+        std::cerr << "[LOGIN] Error reading server certificate" << std::endl;
+        X509_free(server_certif);
+        return 0;
+    }
+
+    // Send server certificate to client
+    BIO *bio = BIO_new(BIO_s_mem());
+    if (!bio)
+    {
+        std::cerr << "[LOGIN] Error creating BIO" << std::endl;
+        X509_free(server_certif);
+        return 0;
+    }
+
+    result = PEM_write_bio_X509(bio, server_certif);
+
+    if (!result)
+    {
+        std::cerr << "[LOGIN] (CertificateStore) Failed to write the certificate in the BIO" << std::endl;
+        BIO_free(bio);
+        X509_free(server_certif);
+        return 0;
+    }
+
+    // Determine the size of the certificate
+    int certif_size = BIO_pending(bio);
+
+    // Resize the vector to fit the certificate
+    Buffer certif_buffer(certif_size);
+    if (BIO_read(bio, certif_buffer.data(), certif_size) <= 0)
+    {
+        std::cerr << "[LOGIN] (CertificateStore) Failed to read the certificate from the BIO" << std::endl;
+        BIO_free(bio);
+        X509_free(server_certif);
+        return 0;
+    }
+
+    // cleanup
+    X509_free(server_certif);
+    BIO_free(bio);
+
+    // --------------------------------------------------------------------------------
+
+    Buffer sendBuffer;
+
+    serializeM3(sServerKey, cipher_text, iv, certif_buffer, sendBuffer);
+
+    if (!sendData(communcation_socket, sendBuffer))
+    {
+        std::cerr << "[LOGIN] Sending [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV, Server_cert size, Server_cert] failed" << std::endl;
+        return 0;
+    }
+
+    // Receive from the client:  {<(g^a,g^b)>c}k, IV
+
+    size_t receive_buffer_size = Encrypted_Signature_Size + CBC_IV_Length;
+
+    Buffer receive_buffer(receive_buffer_size);
+    if (!receiveData(communcation_socket, receive_buffer))
+    {
+        std::cerr << "[LOGIN] Error receiving {<(g^a,g^b)>c}k, IV" << std::endl;
+        return 0;
+    }
+
+    // Variables to store the deserialized components {<(g^a,g^b)>c}k, IV
+    clear_vec(cipher_text);
+    clear_vec(iv);
+
+    // Call the deserialize function
+    deserializeM4(receive_buffer, cipher_text, iv);
+
+    // Decrypt  {<(g^a,g^b)>c}k  using the session key
+    Buffer plaintext;
+    if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
+    {
+        std::cerr << "[LOGIN] Error decrypting {<(g^a,g^b)>c}k" << std::endl;
+        return 0;
+    }
+
+    // Load user public key
+    std::string public_key_path = "../commons/" + username + "/public.pem";
+    EVP_PKEY *client_public_key = nullptr;
+    if (!loadPublicKey(public_key_path, client_public_key))
+    {
+        std::cerr << "[LOGIN] Failed to load user public key" << std::endl;
+        EVP_PKEY_free(client_public_key);
+        return 0;
+    }
+
+    if (!verifyDigitalSignature(concatenatedKeys, plaintext, client_public_key))
+    {
+        std::cerr << "[LOGIN] Failed to verify digital signature" << std::endl;
+        EVP_PKEY_free(client_public_key);
+        return 0;
+    }
+
+    std::cout << "[LOGIN] Login Success" << std::endl;
+
+    // Cleanup OpenSSL (if not done already)
+    EVP_cleanup();
+    EVP_PKEY_free(client_public_key);
+    clear_vec(digest);
+
+    return 1;
 }
 int Worker::upload_file(Buffer payload)
 {

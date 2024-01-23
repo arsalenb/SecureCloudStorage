@@ -22,7 +22,6 @@
 #include "../packets/rename.h"
 #include "../packets/delete.h"
 #include <filesystem>
-#include <signal.h>
 #include "worker.h"
 
 int main()

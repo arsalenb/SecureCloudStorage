@@ -1,3 +1,6 @@
+#ifndef _DELETE_H
+#define _DELETE_H
+
 #include <iostream>
 #include <string>
 #include <cstdint>
@@ -44,3 +47,4 @@ public:
     uint8_t getAckCode() { return ack_code; };
     void print() const;
 };
+#endif

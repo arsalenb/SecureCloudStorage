@@ -31,9 +31,9 @@ void serializeM3(Buffer &serializedServerEphemralKey,
 bool deserializeM3(Buffer &receivedBuffer,
                    Buffer &serializedServerEphemralKey,
                    Buffer &cipher_text, Buffer &server_certificate, Buffer &iv);
-bool serializeLoginMessageFromTheClient(Buffer &cipher_text, Buffer &iv, Buffer &sendBuffer);
-void deserializeLoginMessageFromTheClient(Buffer &receivedBuffer,
-                                          Buffer &cipher_text, Buffer &iv);
+void serializeM4(Buffer &cipher_text, Buffer &iv, Buffer &sendBuffer);
+void deserializeM4(Buffer &receivedBuffer,
+                   Buffer &cipher_text, Buffer &iv);
 
 size_t calLengthLoginMessageFromTheServer();
 bool loadPrivateKey(std::string privateKeyPath, EVP_PKEY *&privateKey, string pem_pas);

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <numeric>
+#include "constants.h"
 
 using namespace std;
 
@@ -26,7 +27,7 @@ void File::read(const std::string &filePath)
     file_size = fs::file_size(filePath);
 
     // Sanitize file name using regex e.g.: '!invalid.txt' is not accepted
-    if (!isValidFileName(file_name))
+    if (!isValidFileName(file_name) || file_name.size() > MAX::file_name)
     {
         throw std::invalid_argument("Invalid file name.");
     }
@@ -38,7 +39,6 @@ void File::read(const std::string &filePath)
         throw std::runtime_error("Unable to open file for reading.");
     }
 }
-
 bool File::isValidFileName(const std::string &name)
 {
     // Use a regex pattern for valid file names
@@ -94,9 +94,11 @@ void File::create(const std::string &filePath)
     {
         throw std::invalid_argument("File already exists.");
     }
+    // Update the file_name member variable
+    file_name = fs::path(filePath).filename().string();
 
     // Sanitize file name using regex e.g.: '!invalid.txt' is not accepted
-    if (!isValidFileName(fs::path(filePath).filename().string()))
+    if (!isValidFileName(file_name) || file_name.size() > MAX::file_name)
     {
         throw std::invalid_argument("Invalid file name.");
     }
@@ -108,9 +110,6 @@ void File::create(const std::string &filePath)
     {
         throw std::runtime_error("Unable to create file.");
     }
-
-    // Update the file_name member variable
-    file_name = fs::path(filePath).filename().string();
 }
 
 void File::writeChunk(const std::vector<unsigned char> &chunk)

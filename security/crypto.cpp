@@ -71,6 +71,7 @@ bool encryptTextAES(Buffer &clear_buf, Buffer sessionKey, Buffer &cphr_buf, Buff
     if (ret != 1)
     {
         cerr << "Error: EncryptInit Failed\n";
+        EVP_CIPHER_CTX_free(ctx);
         return false;
     }
 
@@ -78,23 +79,22 @@ bool encryptTextAES(Buffer &clear_buf, Buffer sessionKey, Buffer &cphr_buf, Buff
     int total_len = 0;  // total encrypted bytes
 
     // Encrypt Update: one call is enough because  the data is small.
-    ret = EVP_EncryptUpdate(ctx, cphr_buf.data(), &update_len, clear_buf.data(), clear_size);
-    if (ret != 1)
+    if (EVP_EncryptUpdate(ctx, cphr_buf.data(), &update_len, clear_buf.data(), clear_size) != 1)
     {
         cerr << "Error: EncryptUpdate Failed\n";
+        EVP_CIPHER_CTX_free(ctx);
         return false;
     }
     total_len += update_len;
 
     // Encrypt Final. Finalize the encryption and add padding
-    ret = EVP_EncryptFinal(ctx, cphr_buf.data() + total_len, &update_len);
-    if (ret != 1)
+    if (EVP_EncryptFinal(ctx, cphr_buf.data() + total_len, &update_len) != 1)
     {
         cerr << "Error: EncryptFinal Failed\n";
+        EVP_CIPHER_CTX_free(ctx);
         return false;
     }
     total_len += update_len;
-
     cphr_size = total_len;
 
     // delete the context and the plaintext from memory
@@ -120,16 +120,16 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ctx = EVP_CIPHER_CTX_new();
     if (!ctx)
     {
-        std::cerr << "Error: EVP_CIPHER_CTX_new returned NULL\n"
-                  << std::endl;
+        std::cerr << "Error: EVP_CIPHER_CTX_new returned NULL" << std::endl;
         return false;
     }
 
     int ret = EVP_DecryptInit(ctx, cipher, key.data(), iv.data());
     if (ret != 1)
     {
-        std::cerr << "Error: DecryptInit Failed\n"
-                  << std::endl;
+        std::cerr << "Error: DecryptInit Failed" << std::endl;
+        EVP_CIPHER_CTX_free(ctx);
+
         return false;
     }
 
@@ -140,9 +140,8 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ret = EVP_DecryptUpdate(ctx, clear_buf.data(), &update_len, cphr_buf.data(), cphr_size);
     if (ret != 1)
     {
-        std::cerr << "Error: DecryptUpdate Failed\n"
-                  << std::endl;
-
+        std::cerr << "Error: DecryptUpdate Failed" << std::endl;
+        EVP_CIPHER_CTX_free(ctx);
         return false;
     }
     total_len += update_len;
@@ -151,15 +150,15 @@ bool decryptTextAES(Buffer &cphr_buf, Buffer &sessionKey, Buffer &iv, Buffer &cl
     ret = EVP_DecryptFinal(ctx, clear_buf.data() + total_len, &update_len);
     if (ret != 1)
     {
-        std::cerr << "Error: DecryptFinal Failed\n"
-                  << std::endl;
-        ;
+        std::cerr << "Error: DecryptFinal Failed" << std::endl;
+        EVP_CIPHER_CTX_free(ctx);
         return false;
     }
     total_len += update_len;
     Buffer cut_clear_buff;
     cut_clear_buff.insert(cut_clear_buff.begin(), clear_buf.begin(), clear_buf.begin() + total_len);
     clear_buf = cut_clear_buff;
+
     // Delete the context and the key from memory
     EVP_CIPHER_CTX_free(ctx);
 

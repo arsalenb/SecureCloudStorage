@@ -18,8 +18,8 @@
 #include "../packets/wrapper.h"
 #include "../packets/download.h"
 #include "../packets/list.h"
-#include "rename.h"
-#include "delete.h"
+#include "../packets/rename.h"
+#include "../packets/delete.h"
 #include "../packets/logout.h"
 
 using namespace std;
@@ -120,22 +120,27 @@ int Client::login()
     if (!loadPrivateKey(privateKeyPath, prvkey, password))
     {
         std::cerr << "[LOGIN] Invalid password for the private key" << std::endl;
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
     // Generate the elliptic curve diffie-Hellman keys for the client
-    EVP_PKEY *ECDH_Keys;
-    if (!(ECDH_Keys = ECDHKeyGeneration()))
+    EVP_PKEY *ECDH_client;
+    if (!(ECDH_client = ECDHKeyGeneration()))
     {
         cerr << "[LOGIN] ECDH key generation failed" << endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
     Buffer sClientKey;
 
-    if (!serializePubKey(ECDH_Keys, sClientKey))
+    if (!serializePubKey(ECDH_client, sClientKey))
     {
         cerr << "[LOGIN] Serialization of public key failed" << endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -144,12 +149,16 @@ int Client::login()
     if (!sendSize(communcation_socket, sClientKeyLength))
     {
         std::cerr << "[LOGIN] Error sending the client public key size to server" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
     // send the DH public key to the server
     if (!sendData(communcation_socket, sClientKey))
     {
         std::cerr << "[LOGIN] Error sending the client public key to server" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -162,6 +171,8 @@ int Client::login()
     if (!receiveData(communcation_socket, receiveBuffer))
     {
         std::cerr << "[LOGIN] Error receiving [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV,Server_cert size, Server_cert] data from the server" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -176,43 +187,49 @@ int Client::login()
     if (!deserializeM3(receiveBuffer, sServerEphemeralKey, cipher_text, certificate_buffer, iv))
     {
         std::cerr << "[LOGIN] Error deseiralizing [(g^b) ,(g^b) size, {<(g^a,g^b)>s}k, IV, Server_cert size, Server_cert] " << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
     // -------------------------- CERTIFICATE HANDLING ----------------------------------
 
     // User exists, proceed to receive the server certificate
-    X509 *server_cert = nullptr;
 
     // Create a BIO from the received data
     BIO *bio = BIO_new_mem_buf(certificate_buffer.data(), certificate_buffer.size());
     if (!bio)
     {
-        std::cerr << "Error creating BIO from certificate data" << std::endl;
-        return false;
+        std::cerr << "[LOGIN] Error creating BIO from certificate data" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
+        return 0;
     }
 
     // Read the X509 certificate from the BIO
+    X509 *server_cert = nullptr;
 
     server_cert = PEM_read_bio_X509(bio, NULL, NULL, NULL);
     if (!server_cert)
     {
-        std::cerr << "Error reading X509 certificate from BIO" << std::endl;
-        ERR_print_errors_fp(stderr); // Print OpenSSL error information
+        std::cerr << "[LOGIN] Error reading X509 certificate from BIO" << std::endl;
+        ERR_print_errors_fp(stderr);
         BIO_free(bio);
-        return false;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
+        return 0;
     }
     // Clean up
     BIO_free(bio);
 
-    const char *caCertFile = "../commons/Cloud Storage CA_cert.pem";
-    const char *crlFile = "../commons/Cloud Storage CA_crl.pem";
     // Load CA certificate
     X509 *caCert = nullptr;
-    FILE *caCertFilePtr = fopen(caCertFile, "r");
+    FILE *caCertFilePtr = fopen(CryptoMaterials::caCertFile.c_str(), "r");
     if (!caCertFilePtr)
     {
         std::cerr << "[LOGIN] Error opening CA certificate file" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -221,15 +238,21 @@ int Client::login()
     if (!caCert)
     {
         std::cerr << "[LOGIN] Error reading CA certificate file" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
+        X509_free(caCert);
         return 0;
     }
 
     // Load CRL
     X509_CRL *crl = nullptr;
-    FILE *crlFilePtr = fopen(crlFile, "r");
+    FILE *crlFilePtr = fopen(CryptoMaterials::crlFile.c_str(), "r");
     if (!crlFilePtr)
     {
         std::cerr << "[LOGIN] Error opening CLR  file" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
+        X509_free(caCert);
         return 0;
     }
 
@@ -239,12 +262,18 @@ int Client::login()
     if (!crl)
     {
         std::cerr << "[LOGIN] Error reading CLR  file" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
+        X509_free(caCert);
+        X509_CRL_free(crl);
         return 0;
     }
 
     if (!verifyServerCertificate(caCert, crl, server_cert))
     {
         std::cerr << "[LOGIN] Server certificate verification failed." << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -254,6 +283,8 @@ int Client::login()
     if (sServerEphemeralKeyLength > Max_Ephemral_Public_Key_Size)
     {
         cerr << "[LOGIN] Ephemeral key size exceeds the max size" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
@@ -261,19 +292,25 @@ int Client::login()
     if (deserializedServerEphemeralKey == NULL)
     {
         cerr << "[LOGIN] Error deseiralizing the seerver ephemeral key" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
 
     // calculate (g^a)^b
     Buffer sharedSecretKey;
     size_t sharedSecretLength;
-    int derivationResult = deriveSharedSecret(ECDH_Keys, deserializedServerEphemeralKey, sharedSecretKey);
 
-    if (derivationResult == -1)
+    if (deriveSharedSecret(ECDH_client, deserializedServerEphemeralKey, sharedSecretKey) == -1)
     {
         std::cerr << "[LOGIN] Key derivation was unsuccessfull" << std::endl;
+        EVP_PKEY_free(ECDH_client);
+        EVP_PKEY_free(prvkey);
         return 0;
     }
+    // free ECDH_client
+    EVP_PKEY_free(ECDH_client);
+
     sharedSecretLength = sharedSecretKey.size();
     // generate session key Sha256((g^a)^b)
     Buffer digest;
@@ -281,6 +318,7 @@ int Client::login()
     if (!computeSHA256Digest(sharedSecretKey, digest))
     {
         std::cerr << "[LOGIN] Shared secret derivation failed" << std::endl;
+        EVP_PKEY_free(prvkey);
         return 0;
     }
     // take first 128 of the the digest
@@ -296,6 +334,7 @@ int Client::login()
     if (!decryptTextAES(cipher_text, session_key, iv, plaintext))
     {
         std::cerr << "[LOGIN] Error decrypting {<(g^a,g^b)>c}k" << std::endl;
+        EVP_PKEY_free(prvkey);
         return 0;
     }
     // verify the <(g^a,g^b)>s
@@ -303,16 +342,27 @@ int Client::login()
     if (!verifyDigitalSignature(concatenatedKeys, plaintext, server_public_key))
     {
         std::cerr << "[LOGIN] Failed to verify digital signature" << std::endl;
+        EVP_PKEY_free(prvkey);
+        EVP_PKEY_free(server_public_key);
         return 0;
     }
+    // free server_public_key
+    EVP_PKEY_free(server_public_key);
+
+    // free server certificate
+    X509_free(server_cert);
+
     // create the digiatl signature <(g^a,g^b)>c using the client private key
     Buffer signature;
     if (!generateDigitalSignature(concatenatedKeys, prvkey, signature))
     {
         std::cerr << "[LOGIN] Creating Digital Signature failed" << std::endl;
+        EVP_PKEY_free(prvkey);
         return 0;
     }
+    // free the client private key
     EVP_PKEY_free(prvkey);
+
     // encrypt  {<(g^a,g^b)>c}k  using the session key
     cipher_text.clear();
     int cipher_size;
@@ -324,11 +374,8 @@ int Client::login()
     }
     //  send to the server: {<(g^a,g^b)>c}k, IV
     Buffer sendBuffer;
-    if (!serializeLoginMessageFromTheClient(cipher_text, iv, sendBuffer))
-    {
-        std::cerr << "[LOGIN] Error serializing [{<(g^a,g^b)>c}k, IV] " << std::endl;
-        return 0;
-    }
+    serializeM4(cipher_text, iv, sendBuffer);
+
     if (!sendData(communcation_socket, sendBuffer))
     {
         std::cerr << "[LOGIN] Error sending [{<(g^a,g^b)>c}k, IV] to the server" << std::endl;
@@ -337,9 +384,7 @@ int Client::login()
 
     // Cleanup OpenSSL (if not done already)
     EVP_cleanup();
-
-    // Clean up
-    X509_free(server_cert);
+    clear_vec(digest);
 
     return 1;
 }
@@ -676,13 +721,14 @@ int Client::download_file()
     std::getline(std::cin, filename);
 
     // make sure input was valid and non null
-    if (!cin || filename.empty())
+    if (!cin || filename.empty() || !File::isValidFileName(filename) || filename.size() > MAX::file_name)
     {
         cerr << "[Download] Invalid filename input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
         return 0;
     }
+
     // Create Download M1 type packet
     DownloadM1 m1(filename);
 
@@ -1008,7 +1054,7 @@ int Client::rename_file()
     std::getline(std::cin, file_name);
 
     // make sure input was valid and non null
-    if (!cin || file_name.empty())
+    if (!cin || file_name.empty() || !File::isValidFileName(file_name) || file_name.size() > MAX::file_name)
     {
         cerr << "[RENAME] Invalid file name input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode
@@ -1022,7 +1068,7 @@ int Client::rename_file()
     std::getline(std::cin, new_file_name);
 
     // make sure input was valid and non null
-    if (!cin || new_file_name.empty())
+    if (!cin || new_file_name.empty() || !File::isValidFileName(new_file_name) || new_file_name.size() > MAX::file_name)
     {
         std::cerr << "[RENAME] Invalid new file name input" << std::endl;
         std::cin.clear(); // put us back in 'normal' operation mode
@@ -1122,7 +1168,7 @@ int Client::delete_file()
     std::getline(std::cin, file_name);
 
     // make sure input was valid and non null
-    if (!cin || file_name.empty())
+    if (!cin || file_name.empty() || !File::isValidFileName(file_name) || file_name.size() > MAX::file_name)
     {
         cerr << "[DELETE] Invalid file name input" << endl;
         std::cin.clear(); // put us back in 'normal' operation mode

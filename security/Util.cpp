@@ -64,8 +64,7 @@ bool generateDigitalSignature(Buffer &data, EVP_PKEY *privateKey, Buffer &signat
     if (!ctx)
     {
         // Handle error
-        cerr << "Error: Creating Context Failed"
-             << endl;
+        cerr << "Error: Creating Context Failed" << endl;
         return false;
     }
 
@@ -94,6 +93,7 @@ bool generateDigitalSignature(Buffer &data, EVP_PKEY *privateKey, Buffer &signat
         EVP_MD_CTX_free(ctx);
         return false;
     }
+    EVP_MD_CTX_free(ctx);
 
     return true;
 }
@@ -115,20 +115,22 @@ bool verifyDigitalSignature(Buffer &data, Buffer &signature, EVP_PKEY *publicKey
     if (ret == 0)
     {
         std::cerr << "Error: EVP_VerifyInit returned " << ret << std::endl;
+        EVP_MD_CTX_free(ctx);
         return false;
     }
     ret = EVP_VerifyUpdate(ctx, data.data(), data.size());
     if (ret == 0)
     {
         std::cerr << "Error: EVP_VerifyUpdate returned " << ret << std::endl;
+        EVP_MD_CTX_free(ctx);
         return false;
     }
     ret = EVP_VerifyFinal(ctx, signature.data(), signature.size(), publicKey);
 
     if (ret != 1)
     {
-        std::cerr << "Error: Signature verification failed\n"
-                  << std::endl;
+        std::cerr << "Error: Signature verification failed" << std::endl;
+        EVP_MD_CTX_free(ctx);
         return false;
     }
 
@@ -268,7 +270,7 @@ bool deserializeM3(Buffer &receivedBuffer,
     return true;
 }
 
-bool serializeLoginMessageFromTheClient(Buffer &cipher_text, Buffer &iv, Buffer &sendBuffer)
+void serializeM4(Buffer &cipher_text, Buffer &iv, Buffer &sendBuffer)
 {
     // Calculate the total length of the data to be sent
     size_t totalLength = Encrypted_Signature_Size + CBC_IV_Length;
@@ -281,12 +283,10 @@ bool serializeLoginMessageFromTheClient(Buffer &cipher_text, Buffer &iv, Buffer 
 
     // Copy iv to the buffer
     std::memcpy(sendBuffer.data() + Encrypted_Signature_Size, iv.data(), CBC_IV_Length);
-
-    return true;
 }
 
-void deserializeLoginMessageFromTheClient(Buffer &receivedBuffer,
-                                          Buffer &cipher_text, Buffer &iv)
+void deserializeM4(Buffer &receivedBuffer,
+                   Buffer &cipher_text, Buffer &iv)
 {
 
     // Resize cipher_text and iv vectors to hold the deserialized data

@@ -1,4 +1,5 @@
-
+#ifndef _RENAME_H
+#define _RENAME_H
 
 #include <iostream>
 #include <string>
@@ -47,3 +48,5 @@ public:
     uint8_t getAckCode() { return ack_code; };
     void print() const;
 };
+
+#endif

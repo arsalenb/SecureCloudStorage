@@ -22,7 +22,7 @@ public:
     void read(const std::string &filePath);
     void writeChunk(const std::vector<unsigned char> &chunk);
     void create(const std::string &filePath);
-    bool isValidFileName(const std::string &name);
+    static bool isValidFileName(const std::string &name);
     void displayFileInfo() const;
     std::vector<unsigned char> readChunk(std::size_t chunkSize);
     uintmax_t getFileSize() { return file_size; }
