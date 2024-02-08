@@ -617,8 +617,13 @@ int Worker::list_files(Buffer payload)
         return -1;
     }
 
-    // send the list of files to the client
+    if (ack_size_packet.getAckCode() == 1)
+    {
+        std::cerr << "[LIST] Folder doe not exist on the cloud!" << endl;
+        return 0;
+    }
 
+    // send the list of files to the client
     ListM3 m3(fileNames.length());
     m3.setFileListData(fileNames.c_str());
 

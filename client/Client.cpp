@@ -504,7 +504,8 @@ int Client::start()
 
         if (result == -1)
         {
-            std::cerr << "[WORKER] Exiting .... Replay Attack or Counter reached maximum value" << std::endl;
+            std::cerr << "[CLIENT] Exiting .... Replay Attack or Counter reached maximum value" << std::endl;
+            // Close any necessary resources (e.g., communication_socket)
             close(communcation_socket);
             exit(EXIT_FAILURE);
         }
